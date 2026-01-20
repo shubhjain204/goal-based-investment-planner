@@ -234,10 +234,12 @@ with right:
     for _, r in calc_df.iterrows():
         tenure = tenure_in_years(r["Years"], r["Months"])
 
+        # Future value of goal
         fv_goal = future_value(
             r["Current Cost"], r["Inflation %"], tenure
         )
 
+        # Existing funds future value (per source ROI)
         fv_existing = sum(
             future_value(r[src["name"]], src["roi"], tenure)
             for src in st.session_state.sources
@@ -251,7 +253,7 @@ with right:
             if fv_gap > 0 and tenure > 0 else 0
         )
 
-        # Option B: Additional SIP (SAFE)
+        # Option B: Additional SIP (safe)
         r_m = r["New SIP ROI %"] / 100 / 12
         n = int(round(tenure * 12))
 
@@ -262,23 +264,25 @@ with right:
         else:
             sip = fv_gap * r_m / ((1 + r_m) ** n - 1)
 
-        total_existing += sum(r[src["name"]] for src in st.session_state.sources)
+        # ✅ Goal-wise existing today
+        total_existing_goal = sum(
+            r[src["name"]] for src in st.session_state.sources
+        )
+
+        total_existing += total_existing_goal
         total_lump += lumpsum_today
         total_sip += sip
 
-total_existing_goal = sum(
-    r[src["name"]] for src in st.session_state.sources
-)
+        rows.append({
+            "Total Existing (Today)": format_indian(total_existing_goal),
+            "Additional Lumpsum Required Today": format_indian(lumpsum_today),
+            "Additional SIP Required / Month": format_indian(sip),
+        })
 
-rows.append({
-    "Total Existing (Today)": format_indian(total_existing_goal),
-    "Additional Lumpsum Required Today": format_indian(lumpsum_today),
-    "Additional SIP Required / Month": format_indian(sip),
-})
-
-
+    # 🔒 THESE MUST BE OUTSIDE THE LOOP
     out_df = pd.DataFrame(rows)
-    out_df.index = out_df.index + 1
+    out_df.index = out_df.index + 1  # S.No.
+
     st.dataframe(out_df, use_container_width=True)
 
     st.markdown(
@@ -290,8 +294,5 @@ rows.append({
         """
     )
 
-st.caption(
-    "Smooth typing fixed • Single source of truth • Dynamic sources • Client save/load • Planner-grade logic"
-)
 
 
