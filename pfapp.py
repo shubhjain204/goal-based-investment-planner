@@ -1,197 +1,140 @@
 import streamlit as st
 import pandas as pd
 
-# ----------------------------
-# Page Config
-# ----------------------------
-st.set_page_config(
-    page_title="Goal-Based Investment Planner",
-    layout="wide"
-)
-
-st.title("🎯 Goal-Based Investment Planner")
-st.caption("Plan how much to invest monthly or as a lump sum to achieve multiple financial goals.")
+st.set_page_config(page_title="Current Lumpsum Fund Allocation", layout="wide")
+st.title("💰 Current Lumpsum Fund Allocation")
 
 # ----------------------------
 # Helper Functions
 # ----------------------------
-def inflation_adjusted_value(fv, inflation, years):
-    return fv / ((1 + inflation / 100) ** years)
+def tenure_in_years(years, months):
+    return years + months / 12
+
+def future_value(current_cost, inflation, years):
+    return current_cost * ((1 + inflation / 100) ** years)
 
 def required_lumpsum(fv, roi, years):
     return fv / ((1 + roi / 100) ** years)
 
-def required_sip(fv, roi, years):
+def required_sip(amount, roi, years):
+    if amount <= 0:
+        return 0
     r = roi / 100 / 12
-    n = years * 12
-    return fv * r / ((1 + r) ** n - 1)
-
-def sip_growth(monthly, roi, years):
-    r = roi / 100 / 12
-    corpus = 0
-    invested = 0
-    data = []
-
-    for year in range(1, years + 1):
-        for _ in range(12):
-            corpus = corpus * (1 + r) + monthly
-            invested += monthly
-        data.append({
-            "Year": year,
-            "Invested": round(invested),
-            "Corpus": round(corpus)
-        })
-
-    return pd.DataFrame(data)
+    n = int(years * 12)
+    return amount * r / ((1 + r) ** n - 1)
 
 def format_inr(x):
     return f"₹{x:,.0f}".replace(",", "_").replace("_", ",")
 
 # ----------------------------
-# Sidebar – Global Settings
+# Session State
 # ----------------------------
-st.sidebar.header("Global Settings")
-
-default_inflation = st.sidebar.slider(
-    "Default Inflation (%)",
-    min_value=0.0,
-    max_value=10.0,
-    value=6.0,
-    step=0.5
-)
-
-investment_mode = st.sidebar.radio(
-    "Investment Mode (Display Preference)",
-    ["Monthly SIP", "Lump Sum"]
-)
-
-# ----------------------------
-# Sidebar – Goals Input
-# ----------------------------
-st.sidebar.header("Goals")
-
 if "goals" not in st.session_state:
     st.session_state.goals = []
 
 def add_goal():
     st.session_state.goals.append({
         "name": f"Goal {len(st.session_state.goals) + 1}",
-        "target": 1000000,
-        "years": 10,
+        "current_cost": 100000,
+        "years": 1,
+        "months": 0,
+        "inflation": 8.0,
         "roi": 10.0,
-        "inflation": default_inflation
+        "sources": []
     })
 
-if st.sidebar.button("➕ Add Goal"):
-    add_goal()
+st.button("➕ Add Goal", on_click=add_goal)
 
 # ----------------------------
-# Goal Cards
+# Goal Inputs
 # ----------------------------
-for i, goal in enumerate(st.session_state.goals):
-    with st.sidebar.expander(f"🎯 {goal['name']}", expanded=True):
-        goal["name"] = st.text_input("Goal Name", goal["name"], key=f"name_{i}")
-        goal["target"] = st.number_input(
-            "Target Amount (Future ₹)",
-            min_value=0,
-            value=goal["target"],
-            step=100000,
-            key=f"target_{i}"
+for gi, g in enumerate(st.session_state.goals):
+    with st.expander(g["name"], expanded=True):
+        col1, col2, col3 = st.columns(3)
+        g["name"] = col1.text_input("Goal Name", g["name"], key=f"name_{gi}")
+        g["current_cost"] = col2.number_input(
+            "Current Cost (₹)", value=g["current_cost"], step=50000, key=f"cost_{gi}"
         )
-        goal["years"] = st.slider(
-            "Time Horizon (Years)",
-            1, 40, goal["years"],
-            key=f"years_{i}"
+        g["inflation"] = col3.slider(
+            "Goal-based Inflation (%)", 0.0, 20.0, g["inflation"], 0.5, key=f"inf_{gi}"
         )
-        goal["roi"] = st.slider(
-            "Expected ROI (%)",
-            4.0, 15.0, goal["roi"],
-            step=0.5,
-            key=f"roi_{i}"
+
+        col4, col5 = st.columns(2)
+        g["years"] = col4.number_input("Years", min_value=0, value=g["years"], key=f"y_{gi}")
+        g["months"] = col5.number_input("Months", min_value=0, max_value=11, value=g["months"], key=f"m_{gi}")
+
+        g["roi"] = st.slider(
+            "Tenure & Goal-based ROI (%)", 4.0, 20.0, g["roi"], 0.5, key=f"roi_{gi}"
         )
-        if st.checkbox("Override Inflation", key=f"inf_override_{i}"):
-            goal["inflation"] = st.slider(
-                "Inflation (%)",
-                0.0, 10.0, goal["inflation"],
-                step=0.5,
-                key=f"inf_{i}"
+
+        # ----------------------------
+        # Dynamic Lumpsum Sources
+        # ----------------------------
+        st.markdown("**Current Lumpsum Sources**")
+
+        if st.button("➕ Add Source", key=f"add_src_{gi}"):
+            g["sources"].append({"name": "Source", "amount": 0})
+
+        for si, src in enumerate(g["sources"]):
+            c1, c2, c3 = st.columns([3, 2, 1])
+            src["name"] = c1.text_input(
+                "Source Name", src["name"], key=f"src_name_{gi}_{si}"
             )
-        else:
-            goal["inflation"] = default_inflation
+            src["amount"] = c2.number_input(
+                "Amount (₹)", value=src["amount"], step=50000, key=f"src_amt_{gi}_{si}"
+            )
+            if c3.button("❌", key=f"del_src_{gi}_{si}"):
+                g["sources"].pop(si)
+                st.experimental_rerun()
 
-        if st.button("❌ Remove Goal", key=f"remove_{i}"):
-            st.session_state.goals.pop(i)
+        if st.button("❌ Remove Goal", key=f"del_goal_{gi}"):
+            st.session_state.goals.pop(gi)
             st.experimental_rerun()
 
 # ----------------------------
-# Calculations
+# Summary Table
 # ----------------------------
 rows = []
-total_sip = 0
-total_lumpsum = 0
 
-for goal in st.session_state.goals:
-    fv_today = inflation_adjusted_value(
-        goal["target"],
-        goal["inflation"],
-        goal["years"]
+for g in st.session_state.goals:
+    tenure = tenure_in_years(g["years"], g["months"])
+    fv = future_value(g["current_cost"], g["inflation"], tenure)
+    lumpsum_required = required_lumpsum(fv, g["roi"], tenure)
+
+    total_sources = sum(s["amount"] for s in g["sources"])
+    surplus_deficit = total_sources - lumpsum_required
+
+    revised_sip = required_sip(
+        abs(surplus_deficit) if surplus_deficit < 0 else 0,
+        g["roi"],
+        tenure
     )
-    sip = required_sip(fv_today, goal["roi"], goal["years"])
-    lump = required_lumpsum(fv_today, goal["roi"], goal["years"])
-
-    total_sip += sip
-    total_lumpsum += lump
 
     rows.append({
-        "Goal": goal["name"],
-        "Years": goal["years"],
-        "ROI (%)": goal["roi"],
-        "Target (Today ₹)": round(fv_today),
-        "Monthly SIP ₹": round(sip),
-        "Lump Sum ₹": round(lump)
+        "Goal": g["name"],
+        "Current Cost": g["current_cost"],
+        "Tenure": f"{g['years']}y {g['months']}m",
+        "Inflation %": g["inflation"],
+        "ROI %": g["roi"],
+        "Lumpsum Required Today": round(lumpsum_required),
+        "Total Lumpsum Available": round(total_sources),
+        "Lumpsum Surplus / Deficit (Today)": round(surplus_deficit),
+        "Monthly SIP Required": round(revised_sip)
     })
 
-df = pd.DataFrame(rows)
+if rows:
+    df = pd.DataFrame(rows)
 
-# ----------------------------
-# Main Output
-# ----------------------------
-st.subheader("📊 Summary")
-
-if not df.empty:
+    st.subheader("📊 Allocation Summary")
     st.dataframe(
         df.style.format({
-            "Target (Today ₹)": format_inr,
-            "Monthly SIP ₹": format_inr,
-            "Lump Sum ₹": format_inr
+            "Current Cost": format_inr,
+            "Lumpsum Required Today": format_inr,
+            "Total Lumpsum Available": format_inr,
+            "Lumpsum Surplus / Deficit (Today)": format_inr,
+            "Monthly SIP Required": format_inr,
         }),
         use_container_width=True
     )
-
-    col1, col2 = st.columns(2)
-    col1.metric("Total Monthly SIP", format_inr(total_sip))
-    col2.metric("Total Lump Sum Required", format_inr(total_lumpsum))
 else:
-    st.info("Add at least one goal to see calculations.")
-
-# ----------------------------
-# Growth Chart
-# ----------------------------
-st.subheader("📈 Goal Growth Visualization")
-
-if st.session_state.goals:
-    selected_goal = st.selectbox(
-        "Select Goal",
-        [g["name"] for g in st.session_state.goals]
-    )
-
-    g = next(g for g in st.session_state.goals if g["name"] == selected_goal)
-
-    fv_today = inflation_adjusted_value(g["target"], g["inflation"], g["years"])
-    sip = required_sip(fv_today, g["roi"], g["years"])
-
-    growth_df = sip_growth(sip, g["roi"], g["years"])
-
-    st.line_chart(
-        growth_df.set_index("Year")[["Corpus", "Invested"]]
-    )
+    st.info("Add at least one goal to see the allocation table.")
