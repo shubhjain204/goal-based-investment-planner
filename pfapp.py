@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import json
 
 st.set_page_config(page_title="Goal-Based Fund Planner", layout="wide")
 st.title("💰 Goal-Based Lumpsum & SIP Planner")
@@ -51,7 +50,7 @@ INFLATION_OPTIONS = [0, 4, 6, 8, 10, 12, 15]
 ROI_OPTIONS = [0, 4, 6, 8, 10, 12, 15, 18, 20]
 
 # =================================================
-# 🔒 Session State NORMALIZATION
+# Session State Init
 # =================================================
 if "sources" not in st.session_state:
     st.session_state.sources = [
@@ -59,19 +58,12 @@ if "sources" not in st.session_state:
         {"name": "Bank", "roi": 4},
     ]
 
-# 🔥 FIX: upgrade old string-based sources
-normalized_sources = []
-for src in st.session_state.sources:
-    if isinstance(src, str):
-        normalized_sources.append({"name": src, "roi": 0})
-    else:
-        normalized_sources.append(src)
+# Upgrade legacy string sources
+st.session_state.sources = [
+    {"name": s, "roi": 0} if isinstance(s, str) else s
+    for s in st.session_state.sources
+]
 
-st.session_state.sources = normalized_sources
-
-# =================================================
-# DataFrame init
-# =================================================
 if "df" not in st.session_state:
     st.session_state.df = pd.DataFrame([{
         "Goal": "Marriage Fund",
@@ -84,48 +76,41 @@ if "df" not in st.session_state:
         "Bank": 1_000_000,
     }])
 
-# Ensure DF has source columns
-for src in st.session_state.sources:
-    if src["name"] not in st.session_state.df.columns:
-        st.session_state.df[src["name"]] = 0
+# =================================================
+# 🔒 SCHEMA NORMALIZATION (CRITICAL)
+# =================================================
+def normalize_df_schema():
+    base_cols = [
+        "Goal",
+        "Current Cost",
+        "Years",
+        "Months",
+        "Inflation %",
+        "New SIP ROI %",
+    ]
+
+    for col in base_cols:
+        if col not in st.session_state.df.columns:
+            st.session_state.df[col] = 0
+
+    for src in st.session_state.sources:
+        if src["name"] not in st.session_state.df.columns:
+            st.session_state.df[src["name"]] = 0
+
+normalize_df_schema()
 
 # =================================================
-# Controls
+# Source Management
 # =================================================
-c1, c2, c3 = st.columns(3)
-
-if c1.button("➕ Add Goal"):
-    new = {c: 0 for c in st.session_state.df.columns}
-    new["Goal"] = f"Goal {len(st.session_state.df) + 1}"
-    new["Inflation %"] = 8
-    new["New SIP ROI %"] = 10
-    st.session_state.df = pd.concat(
-        [st.session_state.df, pd.DataFrame([new])],
-        ignore_index=True
-    )
-
-if c2.button("➕ Add Source"):
-    name = f"Source {len(st.session_state.sources) + 1}"
-    st.session_state.sources.append({"name": name, "roi": 8})
-    st.session_state.df[name] = 0
-
-if c3.button("🔄 Reset"):
-    st.session_state.clear()
-    st.experimental_rerun()
-
-# =================================================
-# Source ROI Management
-# =================================================
-st.subheader("🟨 Existing Sources (Amount + Expected ROI)")
+st.subheader("🟨 Existing Sources")
 
 for i, src in enumerate(st.session_state.sources):
     c1, c2, c3 = st.columns([2, 2, 1])
 
-    src["name"] = c1.text_input(
-        "Source",
-        src["name"],
-        key=f"sname{i}"
-    )
+    new_name = c1.text_input("Source", src["name"], key=f"sname{i}")
+    if new_name != src["name"]:
+        st.session_state.df.rename(columns={src["name"]: new_name}, inplace=True)
+        src["name"] = new_name
 
     src["roi"] = c2.selectbox(
         "ROI %",
@@ -140,17 +125,19 @@ for i, src in enumerate(st.session_state.sources):
         st.experimental_rerun()
 
 # =================================================
-# Side-by-side tables
+# INPUT TABLE
 # =================================================
+normalize_df_schema()
+
+input_cols = (
+    ["Goal", "Current Cost", "Years", "Months", "Inflation %", "New SIP ROI %"]
+    + [s["name"] for s in st.session_state.sources]
+)
+
 left, right = st.columns([3, 2])
 
 with left:
     st.subheader("🟦 Inputs")
-
-    input_cols = (
-        ["Goal", "Current Cost", "Years", "Months", "Inflation %", "New SIP ROI %"]
-        + [s["name"] for s in st.session_state.sources]
-    )
 
     edited = st.data_editor(
         st.session_state.df[input_cols],
@@ -165,6 +152,9 @@ with left:
 
     st.session_state.df[input_cols] = edited[input_cols]
 
+# =================================================
+# OUTPUT TABLE
+# =================================================
 with right:
     st.subheader("🟩 Outputs")
 
@@ -181,8 +171,11 @@ with right:
 
         fv_existing = 0
         for src in st.session_state.sources:
-            amt = r._asdict()[src["name"]]
-            fv_existing += future_value(amt, src["roi"], tenure)
+            fv_existing += future_value(
+                r._asdict()[src["name"]],
+                src["roi"],
+                tenure
+            )
 
         fv_gap = fv_goal - fv_existing
 
@@ -211,5 +204,5 @@ with right:
     st.dataframe(out_df, use_container_width=True)
 
 st.caption(
-    "Per-source ROI handled correctly • SIP targets future value • Index = S.No."
+    "Schema-normalized • Per-source ROI • SIP on future value • Stable across reruns"
 )
