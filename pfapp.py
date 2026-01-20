@@ -1,13 +1,12 @@
 import streamlit as st
 import pandas as pd
 import json
-import math
 
 st.set_page_config(page_title="Current Lumpsum Fund Allocation", layout="wide")
 st.title("💰 Current Lumpsum Fund Allocation (Excel-style)")
 
 # =================================================
-# Helper Functions
+# Helper Functions (MINIMALLY FIXED)
 # =================================================
 def tenure_in_years(years, months):
     return years + months / 12
@@ -24,21 +23,19 @@ def required_sip(amount, roi, years):
     if amount <= 0:
         return 0
 
-    months = int(round(years * 12))
+    months = int(years * 12)
     if months <= 0:
         return 0
 
-    # ROI = 0 case
-    if roi == 0:
+    r = roi / 100 / 12
+    if r == 0:
         return amount / months
 
-    r = roi / 100 / 12
-    denominator = (1 + r) ** months - 1
-
-    if denominator == 0:
+    denom = (1 + r) ** months - 1
+    if denom == 0:
         return 0
 
-    return amount * r / denominator
+    return amount * r / denom
 
 def format_indian(n):
     try:
@@ -65,47 +62,47 @@ INFLATION_OPTIONS = [0, 4, 6, 8, 10, 12, 15]
 ROI_OPTIONS = [0, 6, 8, 10, 12, 15, 18, 20]
 
 # =================================================
-# Column Definitions
+# Columns
 # =================================================
 INPUT_COLS = [
-    "🎯 Goal",
-    "🟦 Current Cost",
-    "🟦 Years",
-    "🟦 Months",
-    "🟦 Inflation %",
-    "🟦 ROI %",
+    "Goal",
+    "Current Cost",
+    "Years",
+    "Months",
+    "Inflation %",
+    "ROI %",
 ]
 
 OUTPUT_COLS = [
-    "🟩 Lumpsum Required Today",
-    "🟩 Total Lumpsum Available",
-    "🟩 Lumpsum Surplus / Deficit (Today)",
-    "🟩 Monthly SIP Required",
+    "Lumpsum Required Today",
+    "Total Lumpsum Available",
+    "Lumpsum Surplus / Deficit (Today)",
+    "Monthly SIP Required",
 ]
 
 # =================================================
 # Session State Init
 # =================================================
 if "sources" not in st.session_state:
-    st.session_state.sources = ["🟨 Source 1"]
+    st.session_state.sources = ["Source 1"]
 
 if "df" not in st.session_state:
     st.session_state.df = pd.DataFrame([{
-        "🎯 Goal": "Goal 1",
-        "🟦 Current Cost": 100000,
-        "🟦 Years": 1,
-        "🟦 Months": 0,
-        "🟦 Inflation %": 8,
-        "🟦 ROI %": 10,
-        "🟨 Source 1": 0,
-        "🟩 Lumpsum Required Today": 0,
-        "🟩 Total Lumpsum Available": 0,
-        "🟩 Lumpsum Surplus / Deficit (Today)": 0,
-        "🟩 Monthly SIP Required": 0,
+        "Goal": "Goal 1",
+        "Current Cost": 100000,
+        "Years": 1,
+        "Months": 0,
+        "Inflation %": 8,
+        "ROI %": 10,
+        "Source 1": 0,
+        "Lumpsum Required Today": 0,
+        "Total Lumpsum Available": 0,
+        "Lumpsum Surplus / Deficit (Today)": 0,
+        "Monthly SIP Required": 0,
     }])
 
 # =================================================
-# Ensure Missing Columns ONLY
+# Ensure Columns (DO NOT OVERWRITE VALUES)
 # =================================================
 def ensure_columns(df):
     for col in INPUT_COLS + OUTPUT_COLS:
@@ -125,9 +122,9 @@ c1, c2, c3, c4 = st.columns(4)
 
 if c1.button("➕ Add Goal"):
     new_row = {col: 0 for col in INPUT_COLS + OUTPUT_COLS}
-    new_row["🎯 Goal"] = f"Goal {len(st.session_state.df) + 1}"
-    new_row["🟦 Inflation %"] = 8
-    new_row["🟦 ROI %"] = 10
+    new_row["Goal"] = f"Goal {len(st.session_state.df) + 1}"
+    new_row["Inflation %"] = 8
+    new_row["ROI %"] = 10
     for src in st.session_state.sources:
         new_row[src] = 0
     st.session_state.df = pd.concat(
@@ -136,7 +133,7 @@ if c1.button("➕ Add Goal"):
     )
 
 if c2.button("➕ Add Source"):
-    new_source = f"🟨 Source {len(st.session_state.sources) + 1}"
+    new_source = f"Source {len(st.session_state.sources) + 1}"
     st.session_state.sources.append(new_source)
     st.session_state.df[new_source] = 0
 
@@ -157,7 +154,38 @@ if c4.button("🔄 Reset"):
     st.experimental_rerun()
 
 # =================================================
-# Single Editable Table
+# Delete Goal / Source
+# =================================================
+g1, g2 = st.columns(2)
+
+with g1:
+    goal_to_delete = st.selectbox("Delete Goal", st.session_state.df["Goal"].tolist())
+    if st.button("Delete Goal"):
+        st.session_state.df = st.session_state.df[
+            st.session_state.df["Goal"] != goal_to_delete
+        ].reset_index(drop=True)
+
+with g2:
+    src_to_delete = st.selectbox("Delete Source", st.session_state.sources)
+    if st.button("Delete Source"):
+        st.session_state.sources.remove(src_to_delete)
+        st.session_state.df.drop(columns=[src_to_delete], inplace=True)
+
+# =================================================
+# Rename Source
+# =================================================
+st.markdown("### Rename Source")
+
+old = st.selectbox("Source", st.session_state.sources)
+new = st.text_input("New Name")
+
+if st.button("Rename Source") and new:
+    st.session_state.df.rename(columns={old: new}, inplace=True)
+    idx = st.session_state.sources.index(old)
+    st.session_state.sources[idx] = new
+
+# =================================================
+# Main Editable Table (SINGLE TABLE)
 # =================================================
 ALL_COLS = INPUT_COLS + st.session_state.sources + OUTPUT_COLS
 st.session_state.df = ensure_columns(st.session_state.df)
@@ -168,60 +196,48 @@ edited_df = st.data_editor(
     num_rows="fixed",
     key="main_table",
     column_config={
-        "🟦 Inflation %": st.column_config.SelectboxColumn(
-            options=INFLATION_OPTIONS
-        ),
-        "🟦 ROI %": st.column_config.SelectboxColumn(
-            options=ROI_OPTIONS
-        ),
+        "Inflation %": st.column_config.SelectboxColumn(options=INFLATION_OPTIONS),
+        "ROI %": st.column_config.SelectboxColumn(options=ROI_OPTIONS),
     }
 )
 
 # =================================================
-# Recalculate Outputs
+# Recalculate Outputs (SAFE)
 # =================================================
 for i, row in edited_df.iterrows():
-    tenure = tenure_in_years(row["🟦 Years"], row["🟦 Months"])
-
-    fv = future_value(
-        row["🟦 Current Cost"],
-        row["🟦 Inflation %"],
-        tenure
-    )
-
-    lump = required_lumpsum(
-        fv,
-        row["🟦 ROI %"],
-        tenure
-    )
+    tenure = tenure_in_years(row["Years"], row["Months"])
+    fv = future_value(row["Current Cost"], row["Inflation %"], tenure)
+    lump = required_lumpsum(fv, row["ROI %"], tenure)
 
     total_sources = sum(row[src] for src in st.session_state.sources)
     surplus = total_sources - lump
 
     sip = required_sip(
         abs(surplus) if surplus < 0 else 0,
-        row["🟦 ROI %"],
+        row["ROI %"],
         tenure
     )
 
-    edited_df.at[i, "🟩 Lumpsum Required Today"] = round(lump)
-    edited_df.at[i, "🟩 Total Lumpsum Available"] = round(total_sources)
-    edited_df.at[i, "🟩 Lumpsum Surplus / Deficit (Today)"] = round(surplus)
-    edited_df.at[i, "🟩 Monthly SIP Required"] = round(sip)
+    edited_df.at[i, "Lumpsum Required Today"] = round(lump)
+    edited_df.at[i, "Total Lumpsum Available"] = round(total_sources)
+    edited_df.at[i, "Lumpsum Surplus / Deficit (Today)"] = round(surplus)
+    edited_df.at[i, "Monthly SIP Required"] = round(sip)
 
 st.session_state.df = edited_df
 
 # =================================================
-# Display (Formatted Indian Numbers)
+# Display (Indian Format)
 # =================================================
 st.dataframe(
     edited_df.style.format({
-        col: format_indian
-        for col in OUTPUT_COLS + ["🟦 Current Cost"] + st.session_state.sources
+        "Current Cost": format_indian,
+        "Lumpsum Required Today": format_indian,
+        "Total Lumpsum Available": format_indian,
+        "Lumpsum Surplus / Deficit (Today)": format_indian,
+        "Monthly SIP Required": format_indian,
+        **{src: format_indian for src in st.session_state.sources}
     }),
     use_container_width=True
 )
 
-st.caption(
-    "🟦 Inputs | 🟨 Existing Capital | 🟩 Computed Outputs — Indian-format numbers (10,00,000)"
-)
+st.caption("Indian number format • Single-table Excel-style financial planning")
