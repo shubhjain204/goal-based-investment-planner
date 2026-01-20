@@ -51,7 +51,7 @@ INFLATION_OPTIONS = [0, 4, 6, 8, 10, 12, 15]
 ROI_OPTIONS = [0, 4, 6, 8, 10, 12, 15, 18, 20]
 
 # =================================================
-# Session state
+# 🔒 Session State NORMALIZATION
 # =================================================
 if "sources" not in st.session_state:
     st.session_state.sources = [
@@ -59,6 +59,19 @@ if "sources" not in st.session_state:
         {"name": "Bank", "roi": 4},
     ]
 
+# 🔥 FIX: upgrade old string-based sources
+normalized_sources = []
+for src in st.session_state.sources:
+    if isinstance(src, str):
+        normalized_sources.append({"name": src, "roi": 0})
+    else:
+        normalized_sources.append(src)
+
+st.session_state.sources = normalized_sources
+
+# =================================================
+# DataFrame init
+# =================================================
 if "df" not in st.session_state:
     st.session_state.df = pd.DataFrame([{
         "Goal": "Marriage Fund",
@@ -70,6 +83,11 @@ if "df" not in st.session_state:
         "Cash": 1_000_000,
         "Bank": 1_000_000,
     }])
+
+# Ensure DF has source columns
+for src in st.session_state.sources:
+    if src["name"] not in st.session_state.df.columns:
+        st.session_state.df[src["name"]] = 0
 
 # =================================================
 # Controls
@@ -102,13 +120,20 @@ st.subheader("🟨 Existing Sources (Amount + Expected ROI)")
 
 for i, src in enumerate(st.session_state.sources):
     c1, c2, c3 = st.columns([2, 2, 1])
-    src["name"] = c1.text_input("Source", src["name"], key=f"sname{i}")
+
+    src["name"] = c1.text_input(
+        "Source",
+        src["name"],
+        key=f"sname{i}"
+    )
+
     src["roi"] = c2.selectbox(
         "ROI %",
         ROI_OPTIONS,
         index=ROI_OPTIONS.index(src["roi"]) if src["roi"] in ROI_OPTIONS else 0,
         key=f"sroi{i}"
     )
+
     if c3.button("❌", key=f"sdel{i}"):
         st.session_state.df.drop(columns=[src["name"]], inplace=True)
         st.session_state.sources.pop(i)
@@ -145,36 +170,36 @@ with right:
 
     rows = []
 
-    for idx, r in st.session_state.df.iterrows():
-        tenure = tenure_in_years(r["Years"], r["Months"])
+    for r in st.session_state.df.itertuples(index=False):
+        tenure = tenure_in_years(r.Years, r.Months)
 
         fv_goal = future_value(
-            r["Current Cost"],
-            r["Inflation %"],
+            r._asdict()["Current Cost"],
+            r._asdict()["Inflation %"],
             tenure
         )
 
         fv_existing = 0
         for src in st.session_state.sources:
-            amt = r[src["name"]]
+            amt = r._asdict()[src["name"]]
             fv_existing += future_value(amt, src["roi"], tenure)
 
         fv_gap = fv_goal - fv_existing
 
         lumpsum_today = (
-            fv_gap / ((1 + r["New SIP ROI %"] / 100) ** tenure)
+            fv_gap / ((1 + r._asdict()["New SIP ROI %"] / 100) ** tenure)
             if fv_gap > 0 else 0
         )
 
         sip_additional = (
-            sip_required(fv_gap, r["New SIP ROI %"], tenure)
+            sip_required(fv_gap, r._asdict()["New SIP ROI %"], tenure)
             if fv_gap > 0 else 0
         )
 
         rows.append({
             "Lumpsum Required in Future": format_indian(fv_goal),
             "Total Existing (Today)": format_indian(
-                sum(r[s["name"]] for s in st.session_state.sources)
+                sum(r._asdict()[s["name"]] for s in st.session_state.sources)
             ),
             "Additional Lumpsum Required Today": format_indian(lumpsum_today),
             "Additional SIP Required / Month": format_indian(sip_additional),
@@ -186,5 +211,5 @@ with right:
     st.dataframe(out_df, use_container_width=True)
 
 st.caption(
-    "SIP targets future value • Existing sources grow at their own ROI • Index = S.No."
+    "Per-source ROI handled correctly • SIP targets future value • Index = S.No."
 )
