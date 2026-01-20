@@ -206,16 +206,19 @@ with left:
         }
     )
 
-    # 🔒 SINGLE WRITE-BACK (CRITICAL FIX)
-    if not edited_df.equals(st.session_state.df[input_cols]):
-        st.session_state.df[input_cols] = edited_df[input_cols]
+    # ✅ FINAL FIX — unconditional assignment
+    st.session_state.df[input_cols] = edited_df[input_cols]
 
     # Totals (read-only)
     totals = {
         s["name"]: format_indian(st.session_state.df[s["name"]].sum())
         for s in st.session_state.sources
     }
-    st.dataframe(pd.DataFrame([{"Goal": "TOTAL", **totals}]), use_container_width=True)
+    st.dataframe(
+        pd.DataFrame([{"Goal": "TOTAL", **totals}]),
+        use_container_width=True
+    )
+
 
 # -----------------
 # OUTPUT TABLE (READ-ONLY, CALCULATED FROM COPY)
@@ -284,3 +287,4 @@ with right:
 st.caption(
     "Smooth typing fixed • Single source of truth • Dynamic sources • Client save/load • Planner-grade logic"
 )
+
