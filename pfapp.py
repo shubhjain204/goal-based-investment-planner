@@ -3,7 +3,7 @@ import pandas as pd
 import json
 
 st.set_page_config(page_title="Current Lumpsum Fund Allocation", layout="wide")
-st.title("💰 Current Lumpsum Fund Allocation")
+st.title("💰 Current Lumpsum Fund Allocation (Excel-style)")
 
 # =================================================
 # Helper Functions
@@ -24,23 +24,27 @@ def required_sip(amount, roi, years):
         return 0
     r = roi / 100 / 12
     n = int(years * 12)
+    if n <= 0:
+        return 0
     return amount * r / ((1 + r) ** n - 1)
 
-def format_inr(x):
-    try:
-        return f"₹{int(x):,}".replace(",", "_").replace("_", ",")
-    except:
-        return x
+# =================================================
+# Column Definitions (SINGLE SOURCE OF TRUTH)
+# =================================================
+INPUT_COLS = [
+    "🎯 Goal",
+    "🟦 Current Cost",
+    "🟦 Years",
+    "🟦 Months",
+    "🟦 Inflation %",
+    "🟦 ROI %",
+]
 
-# =================================================
-# Schema
-# =================================================
-INPUT_COLS = ["🎯 Goal", "🟦 Current Cost", "🟦 Years", "🟦 Months", "🟦 Inflation %", "🟦 ROI %"]
 OUTPUT_COLS = [
     "🟩 Lumpsum Required Today",
     "🟩 Total Lumpsum Available",
     "🟩 Lumpsum Surplus / Deficit (Today)",
-    "🟩 Monthly SIP Required"
+    "🟩 Monthly SIP Required",
 ]
 
 # =================================================
@@ -57,8 +61,31 @@ if "df" not in st.session_state:
         "🟦 Months": 0,
         "🟦 Inflation %": 8.0,
         "🟦 ROI %": 10.0,
-        "🟨 Source 1": 0
+        "🟨 Source 1": 0,
     }])
+
+# =================================================
+# 🔒 CRITICAL: DataFrame Schema Normalization
+# =================================================
+def normalize_df(df):
+    # Ensure input columns
+    for col in INPUT_COLS:
+        if col not in df.columns:
+            df[col] = 0
+
+    # Ensure source columns
+    for src in st.session_state.sources:
+        if src not in df.columns:
+            df[src] = 0
+
+    # Ensure output columns
+    for col in OUTPUT_COLS:
+        if col not in df.columns:
+            df[col] = 0
+
+    return df
+
+st.session_state.df = normalize_df(st.session_state.df)
 
 # =================================================
 # Controls
@@ -68,9 +95,12 @@ c1, c2, c3, c4 = st.columns(4)
 if c1.button("➕ Add Goal"):
     new_row = {col: 0 for col in INPUT_COLS + OUTPUT_COLS}
     new_row["🎯 Goal"] = f"Goal {len(st.session_state.df) + 1}"
-    for s in st.session_state.sources:
-        new_row[s] = 0
-    st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([new_row])], ignore_index=True)
+    for src in st.session_state.sources:
+        new_row[src] = 0
+    st.session_state.df = pd.concat(
+        [st.session_state.df, pd.DataFrame([new_row])],
+        ignore_index=True
+    )
 
 if c2.button("➕ Add Source"):
     new_source = f"🟨 Source {len(st.session_state.sources) + 1}"
@@ -101,24 +131,28 @@ st.markdown("### 🧩 Manage Sources")
 sc1, sc2 = st.columns(2)
 
 with sc1:
-    source_to_rename = st.selectbox("Rename Source", st.session_state.sources)
+    src_to_rename = st.selectbox("Rename Source", st.session_state.sources)
     new_name = st.text_input("New Name")
     if st.button("Rename"):
         if new_name:
-            idx = st.session_state.sources.index(source_to_rename)
-            st.session_state.sources[idx] = f"🟨 {new_name}"
-            st.session_state.df.rename(columns={source_to_rename: f"🟨 {new_name}"}, inplace=True)
+            new_col = f"🟨 {new_name}"
+            st.session_state.df.rename(columns={src_to_rename: new_col}, inplace=True)
+            idx = st.session_state.sources.index(src_to_rename)
+            st.session_state.sources[idx] = new_col
 
 with sc2:
-    source_to_delete = st.selectbox("Delete Source", st.session_state.sources)
+    src_to_delete = st.selectbox("Delete Source", st.session_state.sources)
     if st.button("Delete"):
-        st.session_state.sources.remove(source_to_delete)
-        st.session_state.df.drop(columns=[source_to_delete], inplace=True)
+        st.session_state.sources.remove(src_to_delete)
+        st.session_state.df.drop(columns=[src_to_delete], inplace=True)
 
 # =================================================
-# Single Editable Table (Inputs + Outputs)
+# Single Editable Table (ONE TABLE ONLY)
 # =================================================
 ALL_COLS = INPUT_COLS + st.session_state.sources + OUTPUT_COLS
+
+# 🔒 Normalize again (after rename/delete)
+st.session_state.df = normalize_df(st.session_state.df)
 
 edited_df = st.data_editor(
     st.session_state.df[ALL_COLS],
@@ -127,17 +161,21 @@ edited_df = st.data_editor(
 )
 
 # =================================================
-# Recalculate Outputs
+# Recalculate Outputs (overwrite formulas)
 # =================================================
 for i, row in edited_df.iterrows():
     tenure = tenure_in_years(row["🟦 Years"], row["🟦 Months"])
     fv = future_value(row["🟦 Current Cost"], row["🟦 Inflation %"], tenure)
     lump = required_lumpsum(fv, row["🟦 ROI %"], tenure)
 
-    total_sources = sum(row[s] for s in st.session_state.sources)
+    total_sources = sum(row[src] for src in st.session_state.sources)
     surplus = total_sources - lump
 
-    sip = required_sip(abs(surplus) if surplus < 0 else 0, row["🟦 ROI %"], tenure)
+    sip = required_sip(
+        abs(surplus) if surplus < 0 else 0,
+        row["🟦 ROI %"],
+        tenure
+    )
 
     edited_df.at[i, "🟩 Lumpsum Required Today"] = round(lump)
     edited_df.at[i, "🟩 Total Lumpsum Available"] = round(total_sources)
@@ -149,6 +187,4 @@ st.session_state.df = edited_df
 # =================================================
 # Footer
 # =================================================
-st.caption(
-    "🟦 Inputs | 🟨 Existing Capital | 🟩 Computed Outputs — Excel-style financial modeling"
-)
+st.caption("🟦 Inputs | 🟨 Existing Capital | 🟩 Computed Outputs — Excel-style modeling")
