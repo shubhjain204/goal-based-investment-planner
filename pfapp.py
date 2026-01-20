@@ -266,10 +266,16 @@ with right:
         total_lump += lumpsum_today
         total_sip += sip
 
-        rows.append({
-            "Additional Lumpsum Required Today": format_indian(lumpsum_today),
-            "Additional SIP Required / Month": format_indian(sip),
-        })
+total_existing_goal = sum(
+    r[src["name"]] for src in st.session_state.sources
+)
+
+rows.append({
+    "Total Existing (Today)": format_indian(total_existing_goal),
+    "Additional Lumpsum Required Today": format_indian(lumpsum_today),
+    "Additional SIP Required / Month": format_indian(sip),
+})
+
 
     out_df = pd.DataFrame(rows)
     out_df.index = out_df.index + 1
@@ -287,4 +293,5 @@ with right:
 st.caption(
     "Smooth typing fixed • Single source of truth • Dynamic sources • Client save/load • Planner-grade logic"
 )
+
 
