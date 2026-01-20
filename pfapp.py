@@ -201,29 +201,39 @@ with left:
         + [s["name"] for s in st.session_state.sources]
     )
 
-    edited_df = st.data_editor(
-        st.session_state.df[input_cols],
-        use_container_width=True,
-        num_rows="fixed",
-        key="inputs_editor",
-        column_config={
-            "Inflation %": st.column_config.SelectboxColumn(options=INFLATION_OPTIONS),
-            "New SIP ROI %": st.column_config.SelectboxColumn(options=ROI_OPTIONS),
-        }
-    )
+    with st.form("input_form", clear_on_submit=False):
+        edited_df = st.data_editor(
+            st.session_state.df[input_cols],
+            use_container_width=True,
+            num_rows="fixed",
+            column_config={
+                "Inflation %": st.column_config.SelectboxColumn(
+                    options=INFLATION_OPTIONS
+                ),
+                "New SIP ROI %": st.column_config.SelectboxColumn(
+                    options=ROI_OPTIONS
+                ),
+            }
+        )
 
-    # 🔒 SINGLE SOURCE OF TRUTH
-    st.session_state.df[input_cols] = edited_df[input_cols]
+        submitted = st.form_submit_button("✅ Apply Changes")
+
+    # 🔒 ONLY update state ON SUBMIT
+    if submitted:
+        st.session_state.df[input_cols] = edited_df[input_cols]
+        st.rerun()
 
     # Totals (read-only)
     totals = {
         s["name"]: format_indian(st.session_state.df[s["name"]].sum())
         for s in st.session_state.sources
     }
+
     st.dataframe(
         pd.DataFrame([{"Goal": "TOTAL", **totals}]),
         use_container_width=True
     )
+
 
 # -----------------
 # OUTPUT TABLE
@@ -296,3 +306,4 @@ with right:
 st.caption(
     "Priority added • Smooth input • Dynamic sources • Correct SIP math • Client-ready tool"
 )
+
