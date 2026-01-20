@@ -45,7 +45,6 @@ if "sources" not in st.session_state:
         {"name": "Bank", "roi": 4},
     ]
 
-# Normalize legacy states
 st.session_state.sources = [
     {"name": s, "roi": 0} if isinstance(s, str) else s
     for s in st.session_state.sources
@@ -54,6 +53,7 @@ st.session_state.sources = [
 if "df" not in st.session_state:
     st.session_state.df = pd.DataFrame([{
         "Goal": "Marriage Fund",
+        "Priority": 1,
         "Current Cost": 5_000_000,
         "Years": 5,
         "Months": 0,
@@ -68,8 +68,13 @@ if "df" not in st.session_state:
 # =================================================
 def normalize_schema():
     base_cols = [
-        "Goal", "Current Cost", "Years", "Months",
-        "Inflation %", "New SIP ROI %"
+        "Goal",
+        "Priority",
+        "Current Cost",
+        "Years",
+        "Months",
+        "Inflation %",
+        "New SIP ROI %",
     ]
     for c in base_cols:
         if c not in st.session_state.df.columns:
@@ -90,6 +95,7 @@ a1, a2, a3, a4, a5 = st.columns(5)
 if a1.button("➕ Add Goal"):
     row = {c: 0 for c in st.session_state.df.columns}
     row["Goal"] = f"Goal {len(st.session_state.df) + 1}"
+    row["Priority"] = len(st.session_state.df) + 1
     row["Inflation %"] = 8
     row["New SIP ROI %"] = 10
     st.session_state.df = pd.concat(
@@ -142,7 +148,7 @@ if uploaded:
     st.rerun()
 
 # =================================================
-# SOURCE MANAGEMENT (SAFE & DYNAMIC)
+# SOURCE MANAGEMENT
 # =================================================
 st.subheader("🟨 Sources (Dynamic)")
 
@@ -190,7 +196,7 @@ with left:
     st.subheader("🟦 Inputs")
 
     input_cols = (
-        ["Goal", "Current Cost", "Years", "Months",
+        ["Goal", "Priority", "Current Cost", "Years", "Months",
          "Inflation %", "New SIP ROI %"]
         + [s["name"] for s in st.session_state.sources]
     )
@@ -206,7 +212,7 @@ with left:
         }
     )
 
-    # ✅ FINAL FIX — unconditional assignment
+    # 🔒 SINGLE SOURCE OF TRUTH
     st.session_state.df[input_cols] = edited_df[input_cols]
 
     # Totals (read-only)
@@ -219,14 +225,13 @@ with left:
         use_container_width=True
     )
 
-
 # -----------------
-# OUTPUT TABLE (READ-ONLY, CALCULATED FROM COPY)
+# OUTPUT TABLE
 # -----------------
 with right:
     st.subheader("🟩 Outputs")
 
-    calc_df = st.session_state.df.copy()
+    calc_df = st.session_state.df.copy().sort_values("Priority")
     rows = []
 
     total_existing = total_lump = total_sip = 0
@@ -234,12 +239,10 @@ with right:
     for _, r in calc_df.iterrows():
         tenure = tenure_in_years(r["Years"], r["Months"])
 
-        # Future value of goal
         fv_goal = future_value(
             r["Current Cost"], r["Inflation %"], tenure
         )
 
-        # Existing funds future value (per source ROI)
         fv_existing = sum(
             future_value(r[src["name"]], src["roi"], tenure)
             for src in st.session_state.sources
@@ -247,13 +250,11 @@ with right:
 
         fv_gap = fv_goal - fv_existing
 
-        # Option A: Additional lumpsum today
         lumpsum_today = (
             fv_gap / ((1 + r["New SIP ROI %"] / 100) ** tenure)
             if fv_gap > 0 and tenure > 0 else 0
         )
 
-        # Option B: Additional SIP (safe)
         r_m = r["New SIP ROI %"] / 100 / 12
         n = int(round(tenure * 12))
 
@@ -264,7 +265,6 @@ with right:
         else:
             sip = fv_gap * r_m / ((1 + r_m) ** n - 1)
 
-        # ✅ Goal-wise existing today
         total_existing_goal = sum(
             r[src["name"]] for src in st.session_state.sources
         )
@@ -274,15 +274,14 @@ with right:
         total_sip += sip
 
         rows.append({
+            "Priority": int(r["Priority"]),
             "Total Existing (Today)": format_indian(total_existing_goal),
             "Additional Lumpsum Required Today": format_indian(lumpsum_today),
             "Additional SIP Required / Month": format_indian(sip),
         })
 
-    # 🔒 THESE MUST BE OUTSIDE THE LOOP
     out_df = pd.DataFrame(rows)
-    out_df.index = out_df.index + 1  # S.No.
-
+    out_df.index = out_df.index + 1
     st.dataframe(out_df, use_container_width=True)
 
     st.markdown(
@@ -294,5 +293,6 @@ with right:
         """
     )
 
-
-
+st.caption(
+    "Priority added • Smooth input • Dynamic sources • Correct SIP math • Client-ready tool"
+)
