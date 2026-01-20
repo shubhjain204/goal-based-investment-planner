@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import json
 
 st.set_page_config(page_title="Goal-Based Fund Planner", layout="wide")
 st.title("💰 Goal-Based Lumpsum & SIP Planner")
@@ -44,7 +45,6 @@ if "sources" not in st.session_state:
         {"name": "Bank", "roi": 4},
     ]
 
-# Normalize legacy states
 st.session_state.sources = [
     {"name": s, "roi": 0} if isinstance(s, str) else s
     for s in st.session_state.sources
@@ -63,16 +63,16 @@ if "df" not in st.session_state:
     }])
 
 # =================================================
-# Schema Normalization (CRITICAL)
+# Schema normalization
 # =================================================
 def normalize_schema():
     base_cols = [
         "Goal", "Current Cost", "Years", "Months",
         "Inflation %", "New SIP ROI %"
     ]
-    for col in base_cols:
-        if col not in st.session_state.df.columns:
-            st.session_state.df[col] = 0
+    for c in base_cols:
+        if c not in st.session_state.df.columns:
+            st.session_state.df[c] = 0
 
     for src in st.session_state.sources:
         if src["name"] not in st.session_state.df.columns:
@@ -81,11 +81,11 @@ def normalize_schema():
 normalize_schema()
 
 # =================================================
-# STRUCTURE CONTROLS
+# TOP ACTION BAR
 # =================================================
-c1, c2, c3, c4 = st.columns(4)
+a1, a2, a3, a4, a5 = st.columns(5)
 
-if c1.button("➕ Add Goal"):
+if a1.button("➕ Add Goal"):
     row = {c: 0 for c in st.session_state.df.columns}
     row["Goal"] = f"Goal {len(st.session_state.df) + 1}"
     row["Inflation %"] = 8
@@ -95,38 +95,52 @@ if c1.button("➕ Add Goal"):
         ignore_index=True
     )
 
-goal_del = c2.selectbox("Delete Goal", st.session_state.df["Goal"].tolist())
-if c2.button("❌ Delete Goal"):
+goal_del = a2.selectbox("Delete Goal", st.session_state.df["Goal"].tolist())
+if a2.button("❌ Delete Goal"):
     st.session_state.df = (
-        st.session_state.df[st.session_state.df["Goal"] != goal_del]
-        .reset_index(drop=True)
+        st.session_state.df[
+            st.session_state.df["Goal"] != goal_del
+        ].reset_index(drop=True)
     )
     st.rerun()
 
-if c3.button("➕ Add Source"):
+if a3.button("➕ Add Source"):
     name = f"Source {len(st.session_state.sources) + 1}"
     st.session_state.sources.append({"name": name, "roi": 8})
     st.session_state.df[name] = 0
     st.rerun()
 
-if c4.button("🔄 Reset"):
-    st.session_state.clear()
+# 💾 SAVE
+if a4.button("💾 Save Client"):
+    payload = {
+        "sources": st.session_state.sources,
+        "df": st.session_state.df.to_dict()
+    }
+    st.download_button(
+        "Download Client File",
+        data=json.dumps(payload),
+        file_name="client_plan.json",
+        mime="application/json"
+    )
+
+# 📂 LOAD
+uploaded = a5.file_uploader("📂 Load Client", type="json")
+if uploaded:
+    data = json.load(uploaded)
+    st.session_state.sources = data["sources"]
+    st.session_state.df = pd.DataFrame(data["df"])
+    normalize_schema()
     st.rerun()
 
 # =================================================
-# SOURCE MANAGEMENT (FULLY DYNAMIC)
+# SOURCE MANAGEMENT
 # =================================================
 st.subheader("🟨 Sources (Dynamic)")
 
 for i, src in enumerate(st.session_state.sources):
     c1, c2, c3 = st.columns([3, 2, 2])
 
-    new_name = c1.text_input(
-        "Source Name",
-        src["name"],
-        key=f"sname_{i}"
-    )
-
+    new_name = c1.text_input("Source Name", src["name"], key=f"sname_{i}")
     if new_name.strip() and new_name != src["name"]:
         st.session_state.df.rename(
             columns={src["name"]: new_name},
@@ -155,10 +169,11 @@ for i, src in enumerate(st.session_state.sources):
 # =================================================
 left, right = st.columns([3, 2])
 
+# -----------------
+# INPUT TABLE + TOTALS
+# -----------------
 with left:
     st.subheader("🟦 Inputs")
-
-    normalize_schema()
 
     input_cols = (
         ["Goal", "Current Cost", "Years", "Months",
@@ -168,28 +183,33 @@ with left:
 
     edited = st.data_editor(
         st.session_state.df[input_cols],
-        num_rows="fixed",
         use_container_width=True,
-        column_config={
-            "Inflation %": st.column_config.SelectboxColumn(options=INFLATION_OPTIONS),
-            "New SIP ROI %": st.column_config.SelectboxColumn(options=ROI_OPTIONS),
-        }
+        num_rows="fixed"
     )
-
     st.session_state.df[input_cols] = edited[input_cols]
 
+    # Totals
+    total_row = {
+        "Goal": "TOTAL",
+        **{s["name"]: format_indian(st.session_state.df[s["name"]].sum())
+           for s in st.session_state.sources}
+    }
+    st.dataframe(pd.DataFrame([total_row]), use_container_width=True)
+
+# -----------------
+# OUTPUT TABLE + TOTALS
+# -----------------
 with right:
     st.subheader("🟩 Outputs")
 
     rows = []
+    total_existing = total_lump = total_sip = 0
 
     for _, r in st.session_state.df.iterrows():
         tenure = tenure_in_years(r["Years"], r["Months"])
 
         fv_goal = future_value(
-            r["Current Cost"],
-            r["Inflation %"],
-            tenure
+            r["Current Cost"], r["Inflation %"], tenure
         )
 
         fv_existing = sum(
@@ -199,33 +219,37 @@ with right:
 
         fv_gap = fv_goal - fv_existing
 
-        lumpsum_today = (
+        lump_today = (
             fv_gap / ((1 + r["New SIP ROI %"] / 100) ** tenure)
             if fv_gap > 0 else 0
         )
 
         r_m = r["New SIP ROI %"] / 100 / 12
         n = int(round(tenure * 12))
+        sip = fv_gap * r_m / ((1 + r_m) ** n - 1) if fv_gap > 0 else 0
 
-        sip_additional = (
-            fv_gap * r_m / ((1 + r_m) ** n - 1)
-            if fv_gap > 0 and n > 0 else 0
-        )
+        total_existing += sum(r[src["name"]] for src in st.session_state.sources)
+        total_lump += lump_today
+        total_sip += sip
 
         rows.append({
-            "Lumpsum Required in Future": format_indian(fv_goal),
-            "Total Existing (Today)": format_indian(
-                sum(r[src["name"]] for src in st.session_state.sources)
-            ),
-            "Additional Lumpsum Required Today": format_indian(lumpsum_today),
-            "Additional SIP Required / Month": format_indian(sip_additional),
+            "Additional Lumpsum Required Today": format_indian(lump_today),
+            "Additional SIP Required / Month": format_indian(sip),
         })
 
     out_df = pd.DataFrame(rows)
     out_df.index = out_df.index + 1
-
     st.dataframe(out_df, use_container_width=True)
 
+    st.markdown(
+        f"""
+        **TOTALS**
+        - Total Existing Today: ₹{format_indian(total_existing)}
+        - Total Additional Lumpsum Needed: ₹{format_indian(total_lump)}
+        - Total Monthly SIP Needed: ₹{format_indian(total_sip)}
+        """
+    )
+
 st.caption(
-    "Sources are fully dynamic • Add / Rename / Delete / ROI per source • Stable across reruns"
+    "Totals added • Save/Load enabled • Client-ready planning tool"
 )
