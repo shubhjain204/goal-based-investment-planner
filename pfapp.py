@@ -1,9 +1,8 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 
 st.set_page_config(page_title="Current Lumpsum Fund Allocation", layout="wide")
-st.title("💰 Current Lumpsum Fund Allocation (Excel-style)")
+st.title("💰 Current Lumpsum Fund Allocation")
 
 # -------------------------------------------------
 # Helper functions
@@ -15,6 +14,8 @@ def future_value(current_cost, inflation, years):
     return current_cost * ((1 + inflation / 100) ** years)
 
 def required_lumpsum(fv, roi, years):
+    if years <= 0:
+        return 0
     return fv / ((1 + roi / 100) ** years)
 
 def required_sip(amount, roi, years):
@@ -25,7 +26,10 @@ def required_sip(amount, roi, years):
     return amount * r / ((1 + r) ** n - 1)
 
 def format_inr(x):
-    return f"₹{x:,.0f}".replace(",", "_").replace("_", ",")
+    try:
+        return f"₹{x:,.0f}".replace(",", "_").replace("_", ",")
+    except:
+        return x
 
 # -------------------------------------------------
 # Session state
@@ -42,7 +46,11 @@ if "df" not in st.session_state:
             "Months": 0,
             "Inflation %": 8.0,
             "ROI %": 10.0,
-            "Source 1": 0
+            "Lumpsum Savings Required": 0,
+            "SIP Required": 0,
+            "Source 1": 0,
+            "Total Lumpsum Available": 0,
+            "Lumpsum Surplus / Deficit (Today)": 0
         }
     ])
 
@@ -59,9 +67,14 @@ if c1.button("➕ Add Goal"):
         "Months": 0,
         "Inflation %": 0.0,
         "ROI %": 0.0,
+        "Lumpsum Savings Required": 0,
+        "SIP Required": 0,
+        "Total Lumpsum Available": 0,
+        "Lumpsum Surplus / Deficit (Today)": 0,
     }
     for s in st.session_state.source_cols:
         new_row[s] = 0
+
     st.session_state.df = pd.concat(
         [st.session_state.df, pd.DataFrame([new_row])],
         ignore_index=True
@@ -73,30 +86,52 @@ if c2.button("➕ Add Source"):
     st.session_state.df[new_source] = 0
 
 # -------------------------------------------------
-# Editable Table (INPUTS)
+# Column order (single table)
 # -------------------------------------------------
-st.subheader("✏️ Inputs (Edit like Excel)")
+base_cols = [
+    "Goal",
+    "Current Cost",
+    "Years",
+    "Months",
+    "Inflation %",
+    "ROI %",
+    "Lumpsum Savings Required",
+    "SIP Required",
+]
 
-input_cols = (
-    ["Goal", "Current Cost", "Years", "Months", "Inflation %", "ROI %"]
-    + st.session_state.source_cols
-)
+end_cols = [
+    "Total Lumpsum Available",
+    "Lumpsum Surplus / Deficit (Today)"
+]
 
+all_cols = base_cols + st.session_state.source_cols + end_cols
+
+# -------------------------------------------------
+# Editable table
+# -------------------------------------------------
 edited_df = st.data_editor(
-    st.session_state.df[input_cols],
+    st.session_state.df[all_cols],
     use_container_width=True,
     num_rows="fixed"
 )
 
 # -------------------------------------------------
-# Calculations
+# Recalculate (overwrite derived columns)
 # -------------------------------------------------
-calc_rows = []
-
-for _, row in edited_df.iterrows():
+for i, row in edited_df.iterrows():
     tenure = tenure_in_years(row["Years"], row["Months"])
-    fv = future_value(row["Current Cost"], row["Inflation %"], tenure)
-    lumpsum_required = required_lumpsum(fv, row["ROI %"], tenure)
+
+    fv = future_value(
+        row["Current Cost"],
+        row["Inflation %"],
+        tenure
+    )
+
+    lumpsum_required = required_lumpsum(
+        fv,
+        row["ROI %"],
+        tenure
+    )
 
     total_available = sum(row[s] for s in st.session_state.source_cols)
     surplus_deficit = total_available - lumpsum_required
@@ -107,30 +142,27 @@ for _, row in edited_df.iterrows():
         tenure
     )
 
-    calc_rows.append({
-        "Goal": row["Goal"],
-        "Lumpsum Required (Today)": round(lumpsum_required),
-        "Total Lumpsum Available": round(total_available),
-        "Lumpsum Surplus / Deficit (Today)": round(surplus_deficit),
-        "Monthly SIP Required": round(sip_required)
-    })
+    edited_df.at[i, "Lumpsum Savings Required"] = round(lumpsum_required)
+    edited_df.at[i, "Total Lumpsum Available"] = round(total_available)
+    edited_df.at[i, "Lumpsum Surplus / Deficit (Today)"] = round(surplus_deficit)
+    edited_df.at[i, "SIP Required"] = round(sip_required)
 
-calc_df = pd.DataFrame(calc_rows)
+# Persist state
+st.session_state.df = edited_df
 
 # -------------------------------------------------
-# Output Table (RESULTS)
+# Display formatted table
 # -------------------------------------------------
-st.subheader("📊 Outputs (Auto-Calculated)")
+st.subheader("📊 Allocation Table")
 
 st.dataframe(
-    calc_df.style.format({
-        "Lumpsum Required (Today)": format_inr,
+    edited_df.style.format({
+        "Current Cost": format_inr,
+        "Lumpsum Savings Required": format_inr,
+        "SIP Required": format_inr,
         "Total Lumpsum Available": format_inr,
         "Lumpsum Surplus / Deficit (Today)": format_inr,
-        "Monthly SIP Required": format_inr,
+        **{s: format_inr for s in st.session_state.source_cols}
     }),
     use_container_width=True
 )
-
-# Persist edits
-st.session_state.df = edited_df
