@@ -6,7 +6,7 @@ st.set_page_config(page_title="Lumpsum Fund Allocation", layout="wide")
 st.title("💰 Current Lumpsum Fund Allocation")
 
 # =================================================
-# Helpers
+# Helper Functions
 # =================================================
 def tenure_in_years(y, m):
     return y + m / 12
@@ -50,13 +50,13 @@ def format_indian(n):
     return ("-" if n < 0 else "") + res
 
 # =================================================
-# Dropdown options
+# Dropdown Options
 # =================================================
 INFLATION_OPTIONS = [0, 4, 6, 8, 10, 12, 15]
 ROI_OPTIONS = [0, 6, 8, 10, 12, 15, 18, 20]
 
 # =================================================
-# Session state
+# Session State
 # =================================================
 if "sources" not in st.session_state:
     st.session_state.sources = ["Source 1"]
@@ -73,12 +73,13 @@ if "df" not in st.session_state:
     }])
 
 def ensure_columns():
-    for col in ["Goal","Current Cost","Years","Months","Inflation %","ROI %"]:
-        if col not in st.session_state.df.columns:
-            st.session_state.df[col] = 0
-    for src in st.session_state.sources:
-        if src not in st.session_state.df.columns:
-            st.session_state.df[src] = 0
+    base_cols = ["Goal","Current Cost","Years","Months","Inflation %","ROI %"]
+    for c in base_cols:
+        if c not in st.session_state.df.columns:
+            st.session_state.df[c] = 0
+    for s in st.session_state.sources:
+        if s not in st.session_state.df.columns:
+            st.session_state.df[s] = 0
 
 ensure_columns()
 
@@ -92,7 +93,10 @@ if c1.button("➕ Add Goal"):
     new["Goal"] = f"Goal {len(st.session_state.df) + 1}"
     new["Inflation %"] = 8
     new["ROI %"] = 10
-    st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([new])], ignore_index=True)
+    st.session_state.df = pd.concat(
+        [st.session_state.df, pd.DataFrame([new])],
+        ignore_index=True
+    )
 
 if c2.button("➕ Add Source"):
     src = f"Source {len(st.session_state.sources) + 1}"
@@ -106,7 +110,8 @@ if c3.button("💾 Save"):
             "sources": st.session_state.sources,
             "df": st.session_state.df.to_dict()
         }),
-        file_name="client_data.json"
+        file_name="client_data.json",
+        mime="application/json"
     )
 
 if c4.button("🔄 Reset"):
@@ -120,10 +125,12 @@ s1, s2 = st.columns(2)
 
 with s1:
     src_old = st.selectbox("Rename Source", st.session_state.sources)
-    src_new = st.text_input("New name")
+    src_new = st.text_input("New Source Name")
     if st.button("Rename") and src_new:
         st.session_state.df.rename(columns={src_old: src_new}, inplace=True)
-        st.session_state.sources[st.session_state.sources.index(src_old)] = src_new
+        st.session_state.sources[
+            st.session_state.sources.index(src_old)
+        ] = src_new
 
 with s2:
     src_del = st.selectbox("Delete Source", st.session_state.sources)
@@ -134,9 +141,14 @@ with s2:
 # =================================================
 # Delete Goal
 # =================================================
-g_del = st.selectbox("Delete Goal", st.session_state.df["Goal"].tolist())
+goal_del = st.selectbox("Delete Goal", st.session_state.df["Goal"].tolist())
 if st.button("Delete Goal"):
-    st.session_state.df = st.session_state.df[st.session_state.df["Goal"] != g_del].reset_index(drop=True)
+    st.session_state.df = (
+        st.session_state.df[
+            st.session_state.df["Goal"] != goal_del
+        ]
+        .reset_index(drop=True)
+    )
 
 # =================================================
 # SIDE-BY-SIDE TABLES
@@ -145,38 +157,79 @@ left, right = st.columns([3, 2])
 
 with left:
     st.subheader("🟦 Inputs")
-    input_cols = ["Goal","Current Cost","Years","Months","Inflation %","ROI %"] + st.session_state.sources
+
+    input_cols = (
+        ["Goal","Current Cost","Years","Months","Inflation %","ROI %"]
+        + st.session_state.sources
+    )
+
     edited = st.data_editor(
         st.session_state.df[input_cols],
         use_container_width=True,
         num_rows="fixed",
         key="inputs",
         column_config={
-            "Inflation %": st.column_config.SelectboxColumn(options=INFLATION_OPTIONS),
-            "ROI %": st.column_config.SelectboxColumn(options=ROI_OPTIONS),
+            "Inflation %": st.column_config.SelectboxColumn(
+                options=INFLATION_OPTIONS
+            ),
+            "ROI %": st.column_config.SelectboxColumn(
+                options=ROI_OPTIONS
+            ),
         }
     )
+
     st.session_state.df[input_cols] = edited[input_cols]
 
 with right:
     st.subheader("🟩 Outputs")
 
     rows = []
-    for _, r in st.session_state.df.iterrows():
+
+    for idx, r in st.session_state.df.iterrows():
         tenure = tenure_in_years(r["Years"], r["Months"])
-        fv = future_value(r["Current Cost"], r["Inflation %"], tenure)
-        lump = required_lumpsum(fv, r["ROI %"], tenure)
-        total = sum(r[s] for s in st.session_state.sources)
-        surplus = total - lump
-        sip = required_sip(abs(surplus) if surplus < 0 else 0, r["ROI %"], tenure)
+
+        fv = future_value(
+            r["Current Cost"],
+            r["Inflation %"],
+            tenure
+        )
+
+        lumpsum_required = required_lumpsum(
+            fv,
+            r["ROI %"],
+            tenure
+        )
+
+        sip_from_zero = required_sip(
+            lumpsum_required,
+            r["ROI %"],
+            tenure
+        )
+
+        total_available = sum(
+            r[s] for s in st.session_state.sources
+        )
+
+        surplus = total_available - lumpsum_required
+
+        additional_sip = (
+            required_sip(abs(surplus), r["ROI %"], tenure)
+            if surplus < 0 else 0
+        )
 
         rows.append({
-            "Lumpsum Required": format_indian(lump),
-            "Available Today": format_indian(total),
-            "Surplus / Deficit": format_indian(surplus),
-            "Monthly SIP": format_indian(sip),
+            "S.No.": idx + 1,  # 👈 FIXED (starts from 1)
+            "Lumpsum Required Today": format_indian(lumpsum_required),
+            "Total Lumpsum Available": format_indian(total_available),
+            "SIP Required (From Zero)": format_indian(sip_from_zero),
+            "Additional SIP Required": format_indian(additional_sip),
         })
 
-    st.dataframe(pd.DataFrame(rows), use_container_width=True)
+    st.dataframe(
+        pd.DataFrame(rows),
+        use_container_width=True
+    )
 
-st.caption("🟦 Editable inputs | 🟩 Calculated outputs — clean Excel-style workflow")
+st.caption(
+    "🟦 Editable Inputs | 🟩 Calculated Outputs | Indian number format | Institutional-grade logic"
+)
