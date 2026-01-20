@@ -24,12 +24,10 @@ def required_sip(amount, roi, years):
         return 0
     r = roi / 100 / 12
     n = int(years * 12)
-    if n <= 0:
-        return 0
     return amount * r / ((1 + r) ** n - 1)
 
 # =================================================
-# Column Definitions (SINGLE SOURCE OF TRUTH)
+# Column Definitions
 # =================================================
 INPUT_COLS = [
     "🎯 Goal",
@@ -62,30 +60,25 @@ if "df" not in st.session_state:
         "🟦 Inflation %": 8.0,
         "🟦 ROI %": 10.0,
         "🟨 Source 1": 0,
+        "🟩 Lumpsum Required Today": 0,
+        "🟩 Total Lumpsum Available": 0,
+        "🟩 Lumpsum Surplus / Deficit (Today)": 0,
+        "🟩 Monthly SIP Required": 0,
     }])
 
 # =================================================
-# 🔒 CRITICAL: DataFrame Schema Normalization
+# Ensure missing columns ONLY (do not overwrite values)
 # =================================================
-def normalize_df(df):
-    # Ensure input columns
-    for col in INPUT_COLS:
+def ensure_columns(df):
+    for col in INPUT_COLS + OUTPUT_COLS:
         if col not in df.columns:
             df[col] = 0
-
-    # Ensure source columns
     for src in st.session_state.sources:
         if src not in df.columns:
             df[src] = 0
-
-    # Ensure output columns
-    for col in OUTPUT_COLS:
-        if col not in df.columns:
-            df[col] = 0
-
     return df
 
-st.session_state.df = normalize_df(st.session_state.df)
+st.session_state.df = ensure_columns(st.session_state.df)
 
 # =================================================
 # Controls
@@ -124,44 +117,57 @@ if c4.button("🔄 Reset"):
     st.experimental_rerun()
 
 # =================================================
-# Rename / Delete Source
+# Delete Goal (SAFE)
 # =================================================
-st.markdown("### 🧩 Manage Sources")
+st.markdown("### 🗑️ Manage Goals & Sources")
 
-sc1, sc2 = st.columns(2)
+gc1, gc2 = st.columns(2)
 
-with sc1:
-    src_to_rename = st.selectbox("Rename Source", st.session_state.sources)
-    new_name = st.text_input("New Name")
-    if st.button("Rename"):
-        if new_name:
-            new_col = f"🟨 {new_name}"
-            st.session_state.df.rename(columns={src_to_rename: new_col}, inplace=True)
-            idx = st.session_state.sources.index(src_to_rename)
-            st.session_state.sources[idx] = new_col
+with gc1:
+    goal_to_delete = st.selectbox(
+        "Delete Goal",
+        st.session_state.df["🎯 Goal"].tolist()
+    )
+    if st.button("Delete Goal"):
+        st.session_state.df = st.session_state.df[
+            st.session_state.df["🎯 Goal"] != goal_to_delete
+        ].reset_index(drop=True)
 
-with sc2:
+with gc2:
     src_to_delete = st.selectbox("Delete Source", st.session_state.sources)
-    if st.button("Delete"):
+    if st.button("Delete Source"):
         st.session_state.sources.remove(src_to_delete)
         st.session_state.df.drop(columns=[src_to_delete], inplace=True)
 
 # =================================================
-# Single Editable Table (ONE TABLE ONLY)
+# Rename Source
+# =================================================
+st.markdown("### ✏️ Rename Source")
+
+src_old = st.selectbox("Select Source", st.session_state.sources)
+src_new = st.text_input("New Source Name")
+
+if st.button("Rename Source") and src_new:
+    new_col = f"🟨 {src_new}"
+    st.session_state.df.rename(columns={src_old: new_col}, inplace=True)
+    idx = st.session_state.sources.index(src_old)
+    st.session_state.sources[idx] = new_col
+
+# =================================================
+# Single Editable Table
 # =================================================
 ALL_COLS = INPUT_COLS + st.session_state.sources + OUTPUT_COLS
-
-# 🔒 Normalize again (after rename/delete)
-st.session_state.df = normalize_df(st.session_state.df)
+st.session_state.df = ensure_columns(st.session_state.df)
 
 edited_df = st.data_editor(
     st.session_state.df[ALL_COLS],
     use_container_width=True,
-    num_rows="fixed"
+    num_rows="fixed",
+    key="main_table"
 )
 
 # =================================================
-# Recalculate Outputs (overwrite formulas)
+# Recalculate Outputs (do NOT touch inputs)
 # =================================================
 for i, row in edited_df.iterrows():
     tenure = tenure_in_years(row["🟦 Years"], row["🟦 Months"])
@@ -182,9 +188,7 @@ for i, row in edited_df.iterrows():
     edited_df.at[i, "🟩 Lumpsum Surplus / Deficit (Today)"] = round(surplus)
     edited_df.at[i, "🟩 Monthly SIP Required"] = round(sip)
 
+# Persist edits
 st.session_state.df = edited_df
 
-# =================================================
-# Footer
-# =================================================
-st.caption("🟦 Inputs | 🟨 Existing Capital | 🟩 Computed Outputs — Excel-style modeling")
+st.caption("🟦 Inputs | 🟨 Existing Capital | 🟩 Computed Outputs — Excel-style financial modeling")
