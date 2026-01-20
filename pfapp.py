@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import json
+import math
 
 st.set_page_config(page_title="Current Lumpsum Fund Allocation", layout="wide")
 st.title("💰 Current Lumpsum Fund Allocation (Excel-style)")
@@ -16,15 +17,52 @@ def future_value(cost, inflation, years):
 
 def required_lumpsum(fv, roi, years):
     if years <= 0:
-        return 0
+        return fv
     return fv / ((1 + roi / 100) ** years)
 
 def required_sip(amount, roi, years):
-    if amount <= 0 or years <= 0:
+    if amount <= 0:
         return 0
+
+    months = int(round(years * 12))
+    if months <= 0:
+        return 0
+
+    # ROI = 0 case
+    if roi == 0:
+        return amount / months
+
     r = roi / 100 / 12
-    n = int(years * 12)
-    return amount * r / ((1 + r) ** n - 1)
+    denominator = (1 + r) ** months - 1
+
+    if denominator == 0:
+        return 0
+
+    return amount * r / denominator
+
+def format_indian(n):
+    try:
+        n = int(round(n))
+    except:
+        return n
+
+    s = str(abs(n))
+    if len(s) <= 3:
+        res = s
+    else:
+        res = s[-3:]
+        s = s[:-3]
+        while s:
+            res = s[-2:] + "," + res
+            s = s[:-2]
+
+    return ("-" if n < 0 else "") + res
+
+# =================================================
+# Dropdown Options
+# =================================================
+INFLATION_OPTIONS = [0, 4, 6, 8, 10, 12, 15]
+ROI_OPTIONS = [0, 6, 8, 10, 12, 15, 18, 20]
 
 # =================================================
 # Column Definitions
@@ -57,8 +95,8 @@ if "df" not in st.session_state:
         "🟦 Current Cost": 100000,
         "🟦 Years": 1,
         "🟦 Months": 0,
-        "🟦 Inflation %": 8.0,
-        "🟦 ROI %": 10.0,
+        "🟦 Inflation %": 8,
+        "🟦 ROI %": 10,
         "🟨 Source 1": 0,
         "🟩 Lumpsum Required Today": 0,
         "🟩 Total Lumpsum Available": 0,
@@ -67,7 +105,7 @@ if "df" not in st.session_state:
     }])
 
 # =================================================
-# Ensure missing columns ONLY (do not overwrite values)
+# Ensure Missing Columns ONLY
 # =================================================
 def ensure_columns(df):
     for col in INPUT_COLS + OUTPUT_COLS:
@@ -88,6 +126,8 @@ c1, c2, c3, c4 = st.columns(4)
 if c1.button("➕ Add Goal"):
     new_row = {col: 0 for col in INPUT_COLS + OUTPUT_COLS}
     new_row["🎯 Goal"] = f"Goal {len(st.session_state.df) + 1}"
+    new_row["🟦 Inflation %"] = 8
+    new_row["🟦 ROI %"] = 10
     for src in st.session_state.sources:
         new_row[src] = 0
     st.session_state.df = pd.concat(
@@ -117,43 +157,6 @@ if c4.button("🔄 Reset"):
     st.experimental_rerun()
 
 # =================================================
-# Delete Goal (SAFE)
-# =================================================
-st.markdown("### 🗑️ Manage Goals & Sources")
-
-gc1, gc2 = st.columns(2)
-
-with gc1:
-    goal_to_delete = st.selectbox(
-        "Delete Goal",
-        st.session_state.df["🎯 Goal"].tolist()
-    )
-    if st.button("Delete Goal"):
-        st.session_state.df = st.session_state.df[
-            st.session_state.df["🎯 Goal"] != goal_to_delete
-        ].reset_index(drop=True)
-
-with gc2:
-    src_to_delete = st.selectbox("Delete Source", st.session_state.sources)
-    if st.button("Delete Source"):
-        st.session_state.sources.remove(src_to_delete)
-        st.session_state.df.drop(columns=[src_to_delete], inplace=True)
-
-# =================================================
-# Rename Source
-# =================================================
-st.markdown("### ✏️ Rename Source")
-
-src_old = st.selectbox("Select Source", st.session_state.sources)
-src_new = st.text_input("New Source Name")
-
-if st.button("Rename Source") and src_new:
-    new_col = f"🟨 {src_new}"
-    st.session_state.df.rename(columns={src_old: new_col}, inplace=True)
-    idx = st.session_state.sources.index(src_old)
-    st.session_state.sources[idx] = new_col
-
-# =================================================
 # Single Editable Table
 # =================================================
 ALL_COLS = INPUT_COLS + st.session_state.sources + OUTPUT_COLS
@@ -163,16 +166,34 @@ edited_df = st.data_editor(
     st.session_state.df[ALL_COLS],
     use_container_width=True,
     num_rows="fixed",
-    key="main_table"
+    key="main_table",
+    column_config={
+        "🟦 Inflation %": st.column_config.SelectboxColumn(
+            options=INFLATION_OPTIONS
+        ),
+        "🟦 ROI %": st.column_config.SelectboxColumn(
+            options=ROI_OPTIONS
+        ),
+    }
 )
 
 # =================================================
-# Recalculate Outputs (do NOT touch inputs)
+# Recalculate Outputs
 # =================================================
 for i, row in edited_df.iterrows():
     tenure = tenure_in_years(row["🟦 Years"], row["🟦 Months"])
-    fv = future_value(row["🟦 Current Cost"], row["🟦 Inflation %"], tenure)
-    lump = required_lumpsum(fv, row["🟦 ROI %"], tenure)
+
+    fv = future_value(
+        row["🟦 Current Cost"],
+        row["🟦 Inflation %"],
+        tenure
+    )
+
+    lump = required_lumpsum(
+        fv,
+        row["🟦 ROI %"],
+        tenure
+    )
 
     total_sources = sum(row[src] for src in st.session_state.sources)
     surplus = total_sources - lump
@@ -188,7 +209,19 @@ for i, row in edited_df.iterrows():
     edited_df.at[i, "🟩 Lumpsum Surplus / Deficit (Today)"] = round(surplus)
     edited_df.at[i, "🟩 Monthly SIP Required"] = round(sip)
 
-# Persist edits
 st.session_state.df = edited_df
 
-st.caption("🟦 Inputs | 🟨 Existing Capital | 🟩 Computed Outputs — Excel-style financial modeling")
+# =================================================
+# Display (Formatted Indian Numbers)
+# =================================================
+st.dataframe(
+    edited_df.style.format({
+        col: format_indian
+        for col in OUTPUT_COLS + ["🟦 Current Cost"] + st.session_state.sources
+    }),
+    use_container_width=True
+)
+
+st.caption(
+    "🟦 Inputs | 🟨 Existing Capital | 🟩 Computed Outputs — Indian-format numbers (10,00,000)"
+)
