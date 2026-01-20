@@ -1,18 +1,12 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
+
+st.set_page_config(page_title="Current Lumpsum Fund Allocation", layout="wide")
+st.title("💰 Current Lumpsum Fund Allocation (Excel-style)")
 
 # -------------------------------------------------
-# Page Config
-# -------------------------------------------------
-st.set_page_config(
-    page_title="Current Lumpsum Fund Allocation",
-    layout="wide"
-)
-
-st.title("💰 Current Lumpsum Fund Allocation")
-
-# -------------------------------------------------
-# Helper Functions
+# Helper functions
 # -------------------------------------------------
 def tenure_in_years(years, months):
     return years + months / 12
@@ -24,173 +18,119 @@ def required_lumpsum(fv, roi, years):
     return fv / ((1 + roi / 100) ** years)
 
 def required_sip(amount, roi, years):
-    if amount <= 0:
+    if amount <= 0 or years <= 0:
         return 0
     r = roi / 100 / 12
     n = int(years * 12)
-    if n <= 0:
-        return 0
     return amount * r / ((1 + r) ** n - 1)
 
 def format_inr(x):
     return f"₹{x:,.0f}".replace(",", "_").replace("_", ",")
 
 # -------------------------------------------------
-# Session State (Schema-Safe)
+# Session state
 # -------------------------------------------------
-def normalize_goal(g):
-    return {
-        "name": g.get("name", "Goal"),
-        "current_cost": g.get("current_cost", 100000),
-        "years": g.get("years", 1),
-        "months": g.get("months", 0),
-        "inflation": g.get("inflation", 8.0),
-        "roi": g.get("roi", 10.0),
-        "sources": g.get("sources", [])
+if "source_cols" not in st.session_state:
+    st.session_state.source_cols = ["Source 1"]
+
+if "df" not in st.session_state:
+    st.session_state.df = pd.DataFrame([
+        {
+            "Goal": "Goal 1",
+            "Current Cost": 100000,
+            "Years": 1,
+            "Months": 0,
+            "Inflation %": 8.0,
+            "ROI %": 10.0,
+            "Source 1": 0
+        }
+    ])
+
+# -------------------------------------------------
+# Controls
+# -------------------------------------------------
+c1, c2 = st.columns(2)
+
+if c1.button("➕ Add Goal"):
+    new_row = {
+        "Goal": f"Goal {len(st.session_state.df) + 1}",
+        "Current Cost": 0,
+        "Years": 0,
+        "Months": 0,
+        "Inflation %": 0.0,
+        "ROI %": 0.0,
     }
-
-if "goals" not in st.session_state:
-    st.session_state.goals = []
-
-# Normalize existing goals (prevents KeyError forever)
-st.session_state.goals = [normalize_goal(g) for g in st.session_state.goals]
-
-def add_goal():
-    st.session_state.goals.append(normalize_goal({}))
-
-st.button("➕ Add Goal", on_click=add_goal)
-
-# -------------------------------------------------
-# Goal Inputs
-# -------------------------------------------------
-for gi, g in enumerate(st.session_state.goals):
-    with st.expander(g["name"], expanded=True):
-
-        c1, c2, c3 = st.columns(3)
-        g["name"] = c1.text_input("Goal Name", g["name"], key=f"name_{gi}")
-        g["current_cost"] = c2.number_input(
-            "Current Cost (₹)",
-            min_value=0,
-            value=g["current_cost"],
-            step=50000,
-            key=f"cost_{gi}"
-        )
-        g["inflation"] = c3.slider(
-            "Goal-based Inflation (%)",
-            0.0, 20.0,
-            g["inflation"],
-            0.5,
-            key=f"inf_{gi}"
-        )
-
-        c4, c5 = st.columns(2)
-        g["years"] = c4.number_input(
-            "Years",
-            min_value=0,
-            value=g["years"],
-            key=f"y_{gi}"
-        )
-        g["months"] = c5.number_input(
-            "Months",
-            min_value=0,
-            max_value=11,
-            value=g["months"],
-            key=f"m_{gi}"
-        )
-
-        g["roi"] = st.slider(
-            "Tenure & Goal-based ROI (%)",
-            4.0, 20.0,
-            g["roi"],
-            0.5,
-            key=f"roi_{gi}"
-        )
-
-        # ----------------------------
-        # Dynamic Lumpsum Sources
-        # ----------------------------
-        st.markdown("**Current Lumpsum Sources**")
-
-        if st.button("➕ Add Source", key=f"add_src_{gi}"):
-            g["sources"].append({"name": "Source", "amount": 0})
-
-        for si, src in enumerate(g["sources"]):
-            s1, s2, s3 = st.columns([3, 2, 1])
-            src["name"] = s1.text_input(
-                "Source Name",
-                src["name"],
-                key=f"src_name_{gi}_{si}"
-            )
-            src["amount"] = s2.number_input(
-                "Amount (₹)",
-                min_value=0,
-                value=src["amount"],
-                step=50000,
-                key=f"src_amt_{gi}_{si}"
-            )
-            if s3.button("❌", key=f"del_src_{gi}_{si}"):
-                g["sources"].pop(si)
-                st.experimental_rerun()
-
-        if st.button("❌ Remove Goal", key=f"del_goal_{gi}"):
-            st.session_state.goals.pop(gi)
-            st.experimental_rerun()
-
-# -------------------------------------------------
-# Summary Table
-# -------------------------------------------------
-rows = []
-
-for g in st.session_state.goals:
-    tenure = tenure_in_years(g["years"], g["months"])
-
-    fv = future_value(
-        g["current_cost"],
-        g["inflation"],
-        tenure
+    for s in st.session_state.source_cols:
+        new_row[s] = 0
+    st.session_state.df = pd.concat(
+        [st.session_state.df, pd.DataFrame([new_row])],
+        ignore_index=True
     )
 
-    lumpsum_required_today = required_lumpsum(
-        fv,
-        g["roi"],
-        tenure
-    )
+if c2.button("➕ Add Source"):
+    new_source = f"Source {len(st.session_state.source_cols) + 1}"
+    st.session_state.source_cols.append(new_source)
+    st.session_state.df[new_source] = 0
 
-    total_available = sum(s["amount"] for s in g["sources"])
-    surplus_deficit_today = total_available - lumpsum_required_today
+# -------------------------------------------------
+# Editable Table (INPUTS)
+# -------------------------------------------------
+st.subheader("✏️ Inputs (Edit like Excel)")
+
+input_cols = (
+    ["Goal", "Current Cost", "Years", "Months", "Inflation %", "ROI %"]
+    + st.session_state.source_cols
+)
+
+edited_df = st.data_editor(
+    st.session_state.df[input_cols],
+    use_container_width=True,
+    num_rows="fixed"
+)
+
+# -------------------------------------------------
+# Calculations
+# -------------------------------------------------
+calc_rows = []
+
+for _, row in edited_df.iterrows():
+    tenure = tenure_in_years(row["Years"], row["Months"])
+    fv = future_value(row["Current Cost"], row["Inflation %"], tenure)
+    lumpsum_required = required_lumpsum(fv, row["ROI %"], tenure)
+
+    total_available = sum(row[s] for s in st.session_state.source_cols)
+    surplus_deficit = total_available - lumpsum_required
 
     sip_required = required_sip(
-        abs(surplus_deficit_today) if surplus_deficit_today < 0 else 0,
-        g["roi"],
+        abs(surplus_deficit) if surplus_deficit < 0 else 0,
+        row["ROI %"],
         tenure
     )
 
-    rows.append({
-        "Goal": g["name"],
-        "Current Cost": g["current_cost"],
-        "Tenure": f"{g['years']}y {g['months']}m",
-        "Inflation (%)": g["inflation"],
-        "ROI (%)": g["roi"],
-        "Lumpsum Required (Today)": round(lumpsum_required_today),
+    calc_rows.append({
+        "Goal": row["Goal"],
+        "Lumpsum Required (Today)": round(lumpsum_required),
         "Total Lumpsum Available": round(total_available),
-        "Lumpsum Surplus / Deficit (Today)": round(surplus_deficit_today),
+        "Lumpsum Surplus / Deficit (Today)": round(surplus_deficit),
         "Monthly SIP Required": round(sip_required)
     })
 
-if rows:
-    df = pd.DataFrame(rows)
+calc_df = pd.DataFrame(calc_rows)
 
-    st.subheader("📊 Allocation Summary")
+# -------------------------------------------------
+# Output Table (RESULTS)
+# -------------------------------------------------
+st.subheader("📊 Outputs (Auto-Calculated)")
 
-    st.dataframe(
-        df.style.format({
-            "Current Cost": format_inr,
-            "Lumpsum Required (Today)": format_inr,
-            "Total Lumpsum Available": format_inr,
-            "Lumpsum Surplus / Deficit (Today)": format_inr,
-            "Monthly SIP Required": format_inr,
-        }),
-        use_container_width=True
-    )
-else:
-    st.info("Add at least one goal to see the allocation summary.")
+st.dataframe(
+    calc_df.style.format({
+        "Lumpsum Required (Today)": format_inr,
+        "Total Lumpsum Available": format_inr,
+        "Lumpsum Surplus / Deficit (Today)": format_inr,
+        "Monthly SIP Required": format_inr,
+    }),
+    use_container_width=True
+)
+
+# Persist edits
+st.session_state.df = edited_df
