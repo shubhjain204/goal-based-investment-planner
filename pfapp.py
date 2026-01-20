@@ -5,10 +5,10 @@ st.set_page_config(page_title="Goal-Based Fund Planner", layout="wide")
 st.title("💰 Goal-Based Lumpsum & SIP Planner")
 
 # =================================================
-# Helpers
+# Helper functions
 # =================================================
-def tenure_in_years(y, m):
-    return y + m / 12
+def tenure_in_years(years, months):
+    return years + months / 12
 
 def future_value(amount, rate, years):
     return amount * ((1 + rate / 100) ** years)
@@ -50,7 +50,7 @@ INFLATION_OPTIONS = [0, 4, 6, 8, 10, 12, 15]
 ROI_OPTIONS = [0, 4, 6, 8, 10, 12, 15, 18, 20]
 
 # =================================================
-# Session State Init
+# Session state initialization
 # =================================================
 if "sources" not in st.session_state:
     st.session_state.sources = [
@@ -58,11 +58,14 @@ if "sources" not in st.session_state:
         {"name": "Bank", "roi": 4},
     ]
 
-# Upgrade legacy string sources
-st.session_state.sources = [
-    {"name": s, "roi": 0} if isinstance(s, str) else s
-    for s in st.session_state.sources
-]
+# Normalize legacy string sources (important)
+normalized = []
+for s in st.session_state.sources:
+    if isinstance(s, str):
+        normalized.append({"name": s, "roi": 0})
+    else:
+        normalized.append(s)
+st.session_state.sources = normalized
 
 if "df" not in st.session_state:
     st.session_state.df = pd.DataFrame([{
@@ -77,7 +80,7 @@ if "df" not in st.session_state:
     }])
 
 # =================================================
-# 🔒 SCHEMA NORMALIZATION (CRITICAL)
+# Schema normalization (CRITICAL)
 # =================================================
 def normalize_df_schema():
     base_cols = [
@@ -100,32 +103,33 @@ def normalize_df_schema():
 normalize_df_schema()
 
 # =================================================
-# Source Management
+# Source management (name + ROI)
 # =================================================
-st.subheader("🟨 Existing Sources")
+st.subheader("🟨 Existing Sources (Amount + Expected ROI)")
 
 for i, src in enumerate(st.session_state.sources):
     c1, c2, c3 = st.columns([2, 2, 1])
 
-    new_name = c1.text_input("Source", src["name"], key=f"sname{i}")
+    new_name = c1.text_input("Source", src["name"], key=f"sname_{i}")
     if new_name != src["name"]:
         st.session_state.df.rename(columns={src["name"]: new_name}, inplace=True)
         src["name"] = new_name
+        normalize_df_schema()
 
     src["roi"] = c2.selectbox(
         "ROI %",
         ROI_OPTIONS,
         index=ROI_OPTIONS.index(src["roi"]) if src["roi"] in ROI_OPTIONS else 0,
-        key=f"sroi{i}"
+        key=f"sroi_{i}"
     )
 
-    if c3.button("❌", key=f"sdel{i}"):
+    if c3.button("❌", key=f"sdel_{i}"):
         st.session_state.df.drop(columns=[src["name"]], inplace=True)
         st.session_state.sources.pop(i)
         st.experimental_rerun()
 
 # =================================================
-# INPUT TABLE
+# Input table
 # =================================================
 normalize_df_schema()
 
@@ -153,46 +157,51 @@ with left:
     st.session_state.df[input_cols] = edited[input_cols]
 
 # =================================================
-# OUTPUT TABLE
+# Output table (CORRECT FINANCE LOGIC)
 # =================================================
 with right:
     st.subheader("🟩 Outputs")
 
     rows = []
 
-    for r in st.session_state.df.itertuples(index=False):
-        tenure = tenure_in_years(r.Years, r.Months)
+    for _, r in st.session_state.df.iterrows():
+        tenure = tenure_in_years(r["Years"], r["Months"])
 
+        # 1. Future value of goal
         fv_goal = future_value(
-            r._asdict()["Current Cost"],
-            r._asdict()["Inflation %"],
+            r["Current Cost"],
+            r["Inflation %"],
             tenure
         )
 
+        # 2. Existing money future value (per-source ROI)
         fv_existing = 0
         for src in st.session_state.sources:
             fv_existing += future_value(
-                r._asdict()[src["name"]],
+                r[src["name"]],
                 src["roi"],
                 tenure
             )
 
+        # 3. Future gap
         fv_gap = fv_goal - fv_existing
 
+        # 4. Option A: additional lumpsum required today
         lumpsum_today = (
-            fv_gap / ((1 + r._asdict()["New SIP ROI %"] / 100) ** tenure)
+            fv_gap / ((1 + r["New SIP ROI %"] / 100) ** tenure)
             if fv_gap > 0 else 0
         )
 
+        # 5. Option B: additional SIP required
         sip_additional = (
-            sip_required(fv_gap, r._asdict()["New SIP ROI %"], tenure)
+            sip_required(fv_gap, r["New SIP ROI %"], tenure)
             if fv_gap > 0 else 0
         )
 
         rows.append({
             "Lumpsum Required in Future": format_indian(fv_goal),
             "Total Existing (Today)": format_indian(
-                sum(r._asdict()[s["name"]] for s in st.session_state.sources)
+                sum(r[src["name"]] for src in st.session_state.sources)
             ),
             "Additional Lumpsum Required Today": format_indian(lumpsum_today),
             "Additional SIP Required / Month": format_indian(sip_additional),
@@ -204,5 +213,5 @@ with right:
     st.dataframe(out_df, use_container_width=True)
 
 st.caption(
-    "Schema-normalized • Per-source ROI • SIP on future value • Stable across reruns"
+    "Index column = S.No. | SIP calculated on future value | Per-source ROI applied correctly"
 )
