@@ -3,7 +3,7 @@ import pandas as pd
 import json
 
 st.set_page_config(page_title="Goal-Based Fund Planner", layout="wide")
-st.title("💰 Goal-Based Lumpsum & SIP Planner")
+st.title("💰 Financial Planning Tool")
 
 # =================================================
 # Helpers
@@ -306,4 +306,5 @@ with right:
 st.caption(
     "Priority added • Smooth input • Dynamic sources • Correct SIP math • Client-ready tool"
 )
+
 
