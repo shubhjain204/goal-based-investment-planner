@@ -202,6 +202,59 @@ with left:
         + [s["name"] for s in st.session_state.sources]
     )
 
+    # ────────────────────────────────────────────────
+    # Define column_config FIRST — before the editor and callback
+    # ────────────────────────────────────────────────
+    column_config = {
+        "Goal": st.column_config.TextColumn(
+            "Goal Name",
+            help="e.g. House, Education, Retirement, Car, Wedding"
+        ),
+        "Priority": st.column_config.NumberColumn(
+            "Priority",
+            min_value=1, step=1,
+            help="1 = highest priority (goals are sorted by this)"
+        ),
+        "Current Cost": st.column_config.NumberColumn(
+            "Current Cost (₹)",
+            format="₹%,d",
+            min_value=0, step=10000,
+            help="Estimated cost **today** to achieve this goal"
+        ),
+        "Years": st.column_config.NumberColumn(
+            "Years",
+            min_value=0, max_value=50, step=1,
+            help="Number of full years until goal"
+        ),
+        "Months": st.column_config.NumberColumn(
+            "Months",
+            min_value=0, max_value=11, step=1,
+            help="Additional months (0–11)"
+        ),
+        "Inflation %": st.column_config.SelectboxColumn(
+            "Inflation %",
+            options=INFLATION_OPTIONS,
+            help="Expected annual inflation for this goal"
+        ),
+        "New SIP ROI %": st.column_config.SelectboxColumn(
+            "SIP ROI %",
+            options=ROI_OPTIONS,
+            help="Expected annual return on new monthly investments"
+        ),
+    }
+
+    # Add dynamic columns for sources
+    for src in st.session_state.sources:
+        column_config[src["name"]] = st.column_config.NumberColumn(
+            f"{src['name']} (₹)",
+            format="₹%,d",
+            min_value=0, step=10000,
+            help=f"Current amount already invested in {src['name']} for this goal"
+        )
+
+    # ────────────────────────────────────────────────
+    # Callback — now safe because column_config already exists
+    # ────────────────────────────────────────────────
     def on_goal_editor_change():
         key = "goal_editor"
         if key not in st.session_state:
@@ -209,16 +262,16 @@ with left:
         edited = st.session_state[key]
         if not isinstance(edited, pd.DataFrame) or edited.empty:
             return
-        # Update only existing columns → prevents shape mismatch
+        # Update only columns that are still present
         common_cols = [c for c in input_cols if c in edited.columns]
         if common_cols:
             st.session_state.df[common_cols] = edited[common_cols]
 
-    # Column config stays the same
-    # ... your column_config dictionary here ...
-
+    # ────────────────────────────────────────────────
+    # The editor itself
+    # ────────────────────────────────────────────────
     st.data_editor(
-        st.session_state.df[input_cols].copy(),
+        st.session_state.df[input_cols].copy(),  # .copy() helps avoid view/copy warnings
         key="goal_editor",
         use_container_width=True,
         num_rows="fixed",
@@ -227,7 +280,7 @@ with left:
         on_change=on_goal_editor_change
     )
 
-    # Totals
+    # Totals row
     totals = {s["name"]: format_indian(st.session_state.df[s["name"]].sum())
               for s in st.session_state.sources}
     st.dataframe(
@@ -235,7 +288,6 @@ with left:
         use_container_width=True,
         hide_index=True
     )
-
 # ─── OUTPUTS ──────────────────────────────────────
 with right:
     st.subheader("Results & Requirements")
@@ -306,4 +358,5 @@ with right:
         st.markdown(f"- **Additional monthly SIP needed**: ₹ {format_indian(total_sip)}")
 
 st.caption("Real-time • Dynamic sources • Correct financial math • v2025.01")
+
 
