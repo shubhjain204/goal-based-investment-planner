@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import pandas as pd
 import json
@@ -325,3 +324,4 @@ st.caption(
     "Real-time updates • User-friendly with helps • Dynamic sources • Correct calculations • Client-ready"
 )
 ```
+
