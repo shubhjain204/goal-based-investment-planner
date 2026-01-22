@@ -204,59 +204,75 @@ for i in range(len(st.session_state.sources)):
 left, right = st.columns([3, 2])
 
 # -----------------
-# INPUT TABLE (Real-time editing)
+# INPUT TABLE (Real-time editing - safe pattern)
 # -----------------
 with left:
     st.subheader("🟦 Goal Inputs")
-    st.markdown("Edit cells directly. Outputs update live as you change values.")
+    st.markdown("Edit cells directly — values are saved automatically when you finish editing a cell (press Enter, tab out, or click elsewhere).")
+
     input_cols = (
         ["Goal", "Priority", "Current Cost", "Years", "Months",
          "Inflation %", "New SIP ROI %"]
         + [s["name"] for s in st.session_state.sources]
     )
+
+    # ─── Key fix: Use a key + on_change callback to persist safely ───
+    def update_df():
+        # This runs only after cell edit is "committed"
+        edited = st.session_state["goal_editor"]
+        if not edited.empty:
+            st.session_state.df[input_cols] = edited
+
     column_config = {
         "Goal": st.column_config.TextColumn(
-            help="Name your goal (e.g., House Purchase)"
+            help="Name your goal (e.g., House Purchase, Child Education)"
         ),
         "Priority": st.column_config.NumberColumn(
-            help="Lower number = higher priority (used for sorting)"
+            min_value=1, step=1,
+            help="Lower number = higher priority (goals sorted by this)"
         ),
         "Current Cost": st.column_config.NumberColumn(
-            help="Today's estimated cost of the goal (in ₹)"
+            format="₹%,d", min_value=0, step=1000,
+            help="Today's estimated cost of achieving this goal (in ₹)"
         ),
         "Years": st.column_config.NumberColumn(
-            help="Number of years until goal"
+            min_value=0, max_value=50, step=1,
+            help="Whole years until the goal"
         ),
         "Months": st.column_config.NumberColumn(
-            help="Additional months until goal (0-11)"
+            min_value=0, max_value=11, step=1,
+            help="Extra months (0–11)"
         ),
         "Inflation %": st.column_config.SelectboxColumn(
             options=INFLATION_OPTIONS,
-            help="Annual inflation rate for this goal"
+            help="Expected annual inflation for this goal's cost"
         ),
         "New SIP ROI %": st.column_config.SelectboxColumn(
             options=ROI_OPTIONS,
-            help="Expected return on new monthly investments (SIP)"
+            help="Expected annual return on new monthly investments"
         ),
     }
+
     for s in st.session_state.sources:
         column_config[s["name"]] = st.column_config.NumberColumn(
-            help=f"Current amount allocated from {s['name']} (in ₹)"
+            format="₹%,d", min_value=0, step=1000,
+            help=f"Current amount you already have in {s['name']} for this goal"
         )
-    
-    edited_df = st.data_editor(
+
+    # The editor itself — key= makes it stable across reruns
+    st.data_editor(
         st.session_state.df[input_cols],
+        key="goal_editor",                  # ← critical: stable widget key
         use_container_width=True,
         num_rows="fixed",
         hide_index=False,
-        column_config=column_config
+        column_config=column_config,
+        on_change=update_df                 # ← only update state when edit is committed
     )
-    # Persist changes immediately for real-time
-    st.session_state.df[input_cols] = edited_df
-    
-    # Totals (read-only, using edited_df for consistency)
+
+    # Show totals based on current session state (always up-to-date after commit)
     totals = {
-        s["name"]: format_indian(edited_df[s["name"]].sum())
+        s["name"]: format_indian(st.session_state.df[s["name"]].sum())
         for s in st.session_state.sources
     }
     st.dataframe(
@@ -264,7 +280,6 @@ with left:
         use_container_width=True,
         hide_index=True
     )
-
 # -----------------
 # OUTPUT TABLE (Updates live)
 # -----------------
@@ -323,5 +338,6 @@ with right:
 st.caption(
     "Real-time updates • User-friendly with helps • Dynamic sources • Correct calculations • Client-ready"
 )
+
 
 
