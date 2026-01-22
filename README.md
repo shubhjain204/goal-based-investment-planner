@@ -146,6 +146,8 @@ This is an **actively evolving project**.
 - Pandas
 
 ---
+## How to Access website?
+- Linke -> https://goal-based-investment-planner.streamlit.app/
 
 ## 🧩 How to Run Locally
 
