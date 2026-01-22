@@ -28,8 +28,8 @@ def format_indian(n):
 # =================================================
 # Options
 # =================================================
-INFLATION_OPTIONS = [0, 4, 6, 8, 10, 12, 15]
-ROI_OPTIONS = [0, 4, 6, 8, 10, 12, 15, 18, 20]
+INFLATION_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15]
+ROI_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
 # =================================================
 # Session State Init
 # =================================================
@@ -61,11 +61,11 @@ def normalize_schema():
     base_cols = [
         "Goal",
         "Priority",
-        "Current Cost",
+        "As on today Cost",
         "Years",
         "Months",
         "Inflation %",
-        "New SIP ROI %",
+        "Goal SIP ROI %",
     ]
     for c in base_cols:
         if c not in st.session_state.df.columns:
@@ -258,3 +258,4 @@ with right:
 st.caption(
     "Priority added • Smooth input • Dynamic sources • Correct SIP math • Client-ready tool"
 )
+
