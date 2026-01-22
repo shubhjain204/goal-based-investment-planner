@@ -1,6 +1,6 @@
-# Goal-Based Financial Planner (Open Source)
+# Goal-Based Financial Planner
 
-An open-source, India-first financial planning tool to plan multiple life goals using
+A financial planning tool to plan multiple life goals using
 inflation, ROI, SIPs, priorities, and dynamic funding sources.
 
 This project aims to provide **transparent, explainable, and realistic** financial planning
