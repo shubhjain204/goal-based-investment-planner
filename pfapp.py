@@ -192,65 +192,62 @@ for i in range(len(st.session_state.sources)):
 left, right = st.columns([3, 2])
 
 # ─── INPUTS ───────────────────────────────────────
-with left:
-    st.subheader("Goal Inputs")
-    st.caption("Edit any cell → changes are saved automatically when focus leaves (Enter / Tab / click elsewhere)")
+column_config = {
+    "Goal": st.column_config.TextColumn(
+        "Goal Name",
+        help="e.g. House Purchase, Daughter's Wedding, Retirement",
+        required=True,
+    ),
+    "Priority": st.column_config.NumberColumn(
+        "Priority",
+        min_value=1,
+        max_value=999,
+        step=1,
+        format="%d",           # plain integer, no commas
+        help="1 = highest priority",
+    ),
+    "Current Cost": st.column_config.NumberColumn(
+        "Current Cost (₹)",
+        min_value=0,
+        step=1000,             # allow bigger jumps
+        format=None,           # ← remove "₹%,d" during editing → most forgiving
+        help="Enter plain number (no commas, no ₹ symbol)",
+    ),
+    "Years": st.column_config.NumberColumn(
+        "Years",
+        min_value=0,
+        max_value=50,
+        step=1,
+        format="%d",
+    ),
+    "Months": st.column_config.NumberColumn(
+        "Months",
+        min_value=0,
+        max_value=11,
+        step=1,
+        format="%d",
+    ),
+    "Inflation %": st.column_config.SelectboxColumn(
+        "Inflation %",
+        options=INFLATION_OPTIONS,
+        required=True,
+    ),
+    "New SIP ROI %": st.column_config.SelectboxColumn(
+        "SIP ROI %",
+        options=ROI_OPTIONS,
+        required=True,
+    ),
+}
 
-    input_cols = (
-        ["Goal", "Priority", "Current Cost", "Years", "Months",
-         "Inflation %", "New SIP ROI %"]
-        + [s["name"] for s in st.session_state.sources]
+# Dynamic source columns — also remove strict format during edit
+for src in st.session_state.sources:
+    column_config[src["name"]] = st.column_config.NumberColumn(
+        f"{src['name']} (₹)",
+        min_value=0,
+        step=1000,
+        format=None,           # ← key change: no "₹%,d" → allows free typing
+        help="Enter plain number (no commas, no ₹)",
     )
-
-    # ────────────────────────────────────────────────
-    # Define column_config FIRST — before the editor and callback
-    # ────────────────────────────────────────────────
-    column_config = {
-        "Goal": st.column_config.TextColumn(
-            "Goal Name",
-            help="e.g. House, Education, Retirement, Car, Wedding"
-        ),
-        "Priority": st.column_config.NumberColumn(
-            "Priority",
-            min_value=1, step=1,
-            help="1 = highest priority (goals are sorted by this)"
-        ),
-        "Current Cost": st.column_config.NumberColumn(
-            "Current Cost (₹)",
-            format="₹%,d",
-            min_value=0, step=10000,
-            help="Estimated cost **today** to achieve this goal"
-        ),
-        "Years": st.column_config.NumberColumn(
-            "Years",
-            min_value=0, max_value=50, step=1,
-            help="Number of full years until goal"
-        ),
-        "Months": st.column_config.NumberColumn(
-            "Months",
-            min_value=0, max_value=11, step=1,
-            help="Additional months (0–11)"
-        ),
-        "Inflation %": st.column_config.SelectboxColumn(
-            "Inflation %",
-            options=INFLATION_OPTIONS,
-            help="Expected annual inflation for this goal"
-        ),
-        "New SIP ROI %": st.column_config.SelectboxColumn(
-            "SIP ROI %",
-            options=ROI_OPTIONS,
-            help="Expected annual return on new monthly investments"
-        ),
-    }
-
-    # Add dynamic columns for sources
-    for src in st.session_state.sources:
-        column_config[src["name"]] = st.column_config.NumberColumn(
-            f"{src['name']} (₹)",
-            format="₹%,d",
-            min_value=0, step=10000,
-            help=f"Current amount already invested in {src['name']} for this goal"
-        )
 
     # ────────────────────────────────────────────────
     # Callback — now safe because column_config already exists
@@ -358,5 +355,6 @@ with right:
         st.markdown(f"- **Additional monthly SIP needed**: ₹ {format_indian(total_sip)}")
 
 st.caption("Real-time • Dynamic sources • Correct financial math • v2025.01")
+
 
 
