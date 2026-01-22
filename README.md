@@ -102,10 +102,10 @@ This:
 
 For each goal, the tool shows:
 
-Output Column |	Meaning
-Total Existing (Today)|	Money you already have for this goal (That's the sum of your sources)
-Additional Lumpsum Required Today	| One-time amount needed now (If you want to invest lumpsum today)
-Additional SIP Required / Month	| Monthly SIP needed if no extra lumpsum (If you have no lumpsum money right now, you can do monthly SIP to achieve your goal)
+|Output Column |	Meaning|
+|Total Existing (Today)|	Money you already have for this goal (That's the sum of your sources)|
+|Additional Lumpsum Required Today	| One-time amount needed now (If you want to invest lumpsum today)|
+|Additional SIP Required / Month	| Monthly SIP needed if no extra lumpsum (If you have no lumpsum money right now, you can do monthly SIP to achieve your goal)|
 
 _Example Interpretation -_
 
