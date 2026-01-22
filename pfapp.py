@@ -6,12 +6,12 @@ st.set_page_config(page_title="Goal-Based Fund Planner", layout="wide")
 st.title("💰 Goal-Based Financial Planning Tool")
 
 st.markdown("""
-### How to use this tool
-- **Add** goals and investment sources using the buttons at the top  
-- **Edit** any cell in the Inputs table → values save automatically when you finish editing (press Enter / Tab / click away)  
-- Outputs update **live** as soon as edits are committed  
-- Rename/delete sources in the Sources section (changes apply immediately)  
-- Save or load your plan anytime using the top-right buttons
+**How to use**  
+• Add goals & sources using the top buttons  
+• Edit cells directly in the table → values save when you finish editing (Enter / Tab / click away)  
+• Type **plain numbers only** (no commas, no ₹) in money fields  
+• Outputs update automatically  
+• Save/load plans using the top buttons
 """)
 
 # ────────────────────────────────────────────────
@@ -32,16 +32,14 @@ def format_indian(n):
         return str(n)
     if n == 0:
         return "0"
+    sign = "-" if n < 0 else ""
     s = str(abs(n))
-    if len(s) <= 3:
-        res = s
-    else:
-        res = s[-3:]
-        s = s[:-3]
-        while s:
-            res = s[-2:] + "," + res
-            s = s[:-2]
-    return ("-" if n < 0 else "") + res
+    res = s[-3:]
+    s = s[:-3]
+    while s:
+        res = s[-2:] + "," + res
+        s = s[:-2]
+    return sign + res
 
 # ────────────────────────────────────────────────
 # Constants
@@ -50,12 +48,12 @@ INFLATION_OPTIONS = [0, 4, 6, 8, 10, 12, 15]
 ROI_OPTIONS = [0, 4, 6, 8, 10, 12, 15, 18, 20]
 
 # ────────────────────────────────────────────────
-# Session State Initialization
+# Session state init
 # ────────────────────────────────────────────────
 if "sources" not in st.session_state:
     st.session_state.sources = [
         {"name": "Cash", "roi": 0},
-        {"name": "Bank FD", "roi": 4},
+        {"name": "Bank FD", "roi": 6},
     ]
 
 if "df" not in st.session_state:
@@ -68,18 +66,18 @@ if "df" not in st.session_state:
         "Inflation %": 8,
         "New SIP ROI %": 12,
         "Cash": 1000000,
-        "Bank FD": 500000,
+        "Bank FD": 800000,
     }])
 
 # ────────────────────────────────────────────────
-# Schema normalization
+# Normalize schema
 # ────────────────────────────────────────────────
 def normalize_schema():
     base_cols = ["Goal", "Priority", "Current Cost", "Years", "Months",
                  "Inflation %", "New SIP ROI %"]
     for col in base_cols:
         if col not in st.session_state.df.columns:
-            st.session_state.df[col] = 0 if col != "Goal" else "New Goal"
+            st.session_state.df[col] = "" if col == "Goal" else 0
 
     for src in st.session_state.sources:
         if src["name"] not in st.session_state.df.columns:
@@ -88,53 +86,43 @@ def normalize_schema():
 normalize_schema()
 
 # ────────────────────────────────────────────────
-# Top Action Bar
+# Top action bar
 # ────────────────────────────────────────────────
-cols = st.columns([1, 1, 1, 1, 1])
+c1, c2, c3, c4, c5 = st.columns(5)
 
-with cols[0]:
-    if st.button("➕ Add Goal", use_container_width=True):
-        new_row = {col: 0 for col in st.session_state.df.columns}
-        new_row["Goal"] = f"Goal {len(st.session_state.df) + 1}"
-        new_row["Priority"] = len(st.session_state.df) + 1
-        new_row["Inflation %"] = 8
-        new_row["New SIP ROI %"] = 12
-        st.session_state.df = pd.concat(
-            [st.session_state.df, pd.DataFrame([new_row])], ignore_index=True
-        )
+with c1:
+    if st.button("➕ Add Goal"):
+        row = {c: 0 for c in st.session_state.df.columns}
+        row["Goal"] = f"Goal {len(st.session_state.df)+1}"
+        row["Priority"] = len(st.session_state.df) + 1
+        row["Inflation %"] = 8
+        row["New SIP ROI %"] = 12
+        st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([row])], ignore_index=True)
         st.rerun()
 
-with cols[1]:
-    goal_list = [""] + st.session_state.df["Goal"].tolist()
-    goal_to_delete = st.selectbox("Delete Goal", goal_list, index=0, label_visibility="collapsed")
-    if goal_to_delete and st.button("❌ Delete", use_container_width=True):
-        st.session_state.df = st.session_state.df[
-            st.session_state.df["Goal"] != goal_to_delete
-        ].reset_index(drop=True)
+with c2:
+    goal_to_del = st.selectbox("Delete Goal", [""] + st.session_state.df["Goal"].tolist(), label_visibility="collapsed")
+    if goal_to_del and st.button("❌ Delete"):
+        st.session_state.df = st.session_state.df[st.session_state.df["Goal"] != goal_to_del].reset_index(drop=True)
         st.rerun()
 
-with cols[2]:
-    if st.button("➕ Add Source", use_container_width=True):
-        name = f"Source {len(st.session_state.sources) + 1}"
-        st.session_state.sources.append({"name": name, "roi": 8})
+with c3:
+    if st.button("➕ Add Source"):
+        name = f"Source {len(st.session_state.sources)+1}"
+        st.session_state.sources.append({"name": name, "roi": 10})
         st.session_state.df[name] = 0
         st.rerun()
 
-with cols[3]:
-    if st.button("💾 Save Plan", use_container_width=True):
+with c4:
+    if st.button("💾 Save Plan"):
         payload = {
             "sources": st.session_state.sources,
             "df": st.session_state.df.to_dict(orient="records")
         }
-        st.download_button(
-            label="Download JSON",
-            data=json.dumps(payload, indent=2),
-            file_name="financial_plan.json",
-            mime="application/json"
-        )
+        st.download_button("Download JSON", json.dumps(payload, indent=2), "plan.json")
 
-with cols[4]:
-    uploaded = st.file_uploader("📂 Load Plan", type=["json"], label_visibility="collapsed")
+with c5:
+    uploaded = st.file_uploader("📂 Load Plan", type="json", label_visibility="collapsed")
     if uploaded:
         try:
             data = json.load(uploaded)
@@ -143,218 +131,129 @@ with cols[4]:
             normalize_schema()
             st.rerun()
         except Exception as e:
-            st.error(f"Error loading file: {e}")
+            st.error(f"Load error: {e}")
 
 # ────────────────────────────────────────────────
-# Sources Management (real-time rename/delete)
+# Sources section
 # ────────────────────────────────────────────────
 st.subheader("Investment Sources")
-st.caption("Rename or change ROI → press Enter. Delete with the button.")
-
-for i in range(len(st.session_state.sources)):
-    src = st.session_state.sources[i]
+for i, src in enumerate(st.session_state.sources):
     c1, c2, c3 = st.columns([4, 2, 1])
-
-    new_name = c1.text_input(
-        label="",
-        value=src["name"],
-        key=f"source_name_{i}",
-        placeholder="Source name",
-        label_visibility="collapsed"
-    )
-    if new_name.strip() and new_name != src["name"]:
+    new_name = c1.text_input("Name", src["name"], key=f"sname_{i}")
+    if new_name != src["name"] and new_name.strip():
         if new_name in [s["name"] for s in st.session_state.sources if s is not src]:
-            c1.error("Duplicate name not allowed")
+            c1.error("Duplicate name")
         else:
-            old_name = src["name"]
-            st.session_state.df.rename(columns={old_name: new_name}, inplace=True)
+            st.session_state.df.rename(columns={src["name"]: new_name}, inplace=True)
             src["name"] = new_name
             st.rerun()
 
-    src["roi"] = c2.selectbox(
-        label="",
-        options=ROI_OPTIONS,
-        index=ROI_OPTIONS.index(src["roi"]) if src["roi"] in ROI_OPTIONS else 0,
-        key=f"source_roi_{i}",
-        label_visibility="collapsed"
-    )
+    src["roi"] = c2.selectbox("ROI %", ROI_OPTIONS, index=ROI_OPTIONS.index(src["roi"]) if src["roi"] in ROI_OPTIONS else 0, key=f"sroi_{i}")
 
-    if c3.button("🗑", key=f"del_source_{i}", help="Delete this source"):
-        old_name = st.session_state.sources.pop(i)["name"]
-        if old_name in st.session_state.df.columns:
-            st.session_state.df.drop(columns=[old_name], inplace=True)
+    if c3.button("🗑", key=f"del_{i}"):
+        name = st.session_state.sources.pop(i)["name"]
+        if name in st.session_state.df.columns:
+            st.session_state.df.drop(columns=[name], inplace=True)
         normalize_schema()
         st.rerun()
 
 # ────────────────────────────────────────────────
-# Main layout: Inputs + Outputs
+# Main layout
 # ────────────────────────────────────────────────
 left, right = st.columns([3, 2])
 
 # ─── INPUTS ───────────────────────────────────────
-column_config = {
-    "Goal": st.column_config.TextColumn(
-        "Goal Name",
-        help="e.g. House Purchase, Daughter's Wedding, Retirement",
-        required=True,
-    ),
-    "Priority": st.column_config.NumberColumn(
-        "Priority",
-        min_value=1,
-        max_value=999,
-        step=1,
-        format="%d",           # plain integer, no commas
-        help="1 = highest priority",
-    ),
-    "Current Cost": st.column_config.NumberColumn(
-        "Current Cost (₹)",
-        min_value=0,
-        step=1000,             # allow bigger jumps
-        format=None,           # ← remove "₹%,d" during editing → most forgiving
-        help="Enter plain number (no commas, no ₹ symbol)",
-    ),
-    "Years": st.column_config.NumberColumn(
-        "Years",
-        min_value=0,
-        max_value=50,
-        step=1,
-        format="%d",
-    ),
-    "Months": st.column_config.NumberColumn(
-        "Months",
-        min_value=0,
-        max_value=11,
-        step=1,
-        format="%d",
-    ),
-    "Inflation %": st.column_config.SelectboxColumn(
-        "Inflation %",
-        options=INFLATION_OPTIONS,
-        required=True,
-    ),
-    "New SIP ROI %": st.column_config.SelectboxColumn(
-        "SIP ROI %",
-        options=ROI_OPTIONS,
-        required=True,
-    ),
-}
+with left:
+    st.subheader("Goal Inputs")
 
-# Dynamic source columns — also remove strict format during edit
-for src in st.session_state.sources:
-    column_config[src["name"]] = st.column_config.NumberColumn(
-        f"{src['name']} (₹)",
-        min_value=0,
-        step=1000,
-        format=None,           # ← key change: no "₹%,d" → allows free typing
-        help="Enter plain number (no commas, no ₹)",
-    )
+    # Define columns list first
+    input_cols = ["Goal", "Priority", "Current Cost", "Years", "Months", "Inflation %", "New SIP ROI %"] + \
+                 [s["name"] for s in st.session_state.sources]
 
-    # ────────────────────────────────────────────────
-    # Callback — now safe because column_config already exists
-    # ────────────────────────────────────────────────
-    def on_goal_editor_change():
-        key = "goal_editor"
-        if key not in st.session_state:
-            return
-        edited = st.session_state[key]
-        if not isinstance(edited, pd.DataFrame) or edited.empty:
-            return
-        # Update only columns that are still present
-        common_cols = [c for c in input_cols if c in edited.columns]
-        if common_cols:
-            st.session_state.df[common_cols] = edited[common_cols]
+    # Column config
+    column_config = {
+        "Goal": st.column_config.TextColumn("Goal", help="e.g. House, Education, Retirement"),
+        "Priority": st.column_config.NumberColumn("Priority", min_value=1, step=1, format="%d"),
+        "Current Cost": st.column_config.NumberColumn("Current Cost (₹)", min_value=0, step=10000, format=None),
+        "Years": st.column_config.NumberColumn("Years", min_value=0, max_value=50, step=1, format="%d"),
+        "Months": st.column_config.NumberColumn("Months", min_value=0, max_value=11, step=1, format="%d"),
+        "Inflation %": st.column_config.SelectboxColumn("Inflation %", options=INFLATION_OPTIONS),
+        "New SIP ROI %": st.column_config.SelectboxColumn("New SIP ROI %", options=ROI_OPTIONS),
+    }
+    for src in st.session_state.sources:
+        column_config[src["name"]] = st.column_config.NumberColumn(f"{src['name']} (₹)", min_value=0, step=10000, format=None)
 
-    # ────────────────────────────────────────────────
-    # The editor itself
-    # ────────────────────────────────────────────────
+    # Safe update callback
+    def update_df():
+        if "goal_editor" in st.session_state:
+            edited = st.session_state["goal_editor"]
+            if isinstance(edited, pd.DataFrame) and not edited.empty:
+                common = [c for c in input_cols if c in edited.columns]
+                if common:
+                    st.session_state.df[common] = edited[common]
+
     st.data_editor(
-        st.session_state.df[input_cols].copy(),  # .copy() helps avoid view/copy warnings
+        st.session_state.df[input_cols].copy(),
         key="goal_editor",
-        use_container_width=True,
-        num_rows="fixed",
-        hide_index=False,
         column_config=column_config,
-        on_change=on_goal_editor_change
+        num_rows="fixed",
+        use_container_width=True,
+        on_change=update_df
     )
 
-    # Totals row
-    totals = {s["name"]: format_indian(st.session_state.df[s["name"]].sum())
-              for s in st.session_state.sources}
-    st.dataframe(
-        pd.DataFrame([{"Goal": "TOTAL", **totals}]),
-        use_container_width=True,
-        hide_index=True
-    )
+    # Totals
+    totals = {s["name"]: format_indian(st.session_state.df[s["name"]].sum()) for s in st.session_state.sources}
+    st.dataframe(pd.DataFrame([{"Goal": "TOTAL", **totals}]), use_container_width=True)
+
 # ─── OUTPUTS ──────────────────────────────────────
 with right:
-    st.subheader("Results & Requirements")
-    st.caption("Sorted by priority — updates live")
+    st.subheader("Results")
 
     if st.session_state.df.empty:
-        st.info("Add at least one goal to see results.")
+        st.info("Add goals to see calculations.")
     else:
         calc_df = st.session_state.df.copy().sort_values("Priority")
-
         rows = []
-        total_existing = total_lump = total_sip = 0.0
+        tot_exist = tot_lump = tot_sip = 0
 
         for _, r in calc_df.iterrows():
             tenure = tenure_in_years(r["Years"], r["Months"])
             fv_goal = future_value(r["Current Cost"], r["Inflation %"], tenure)
+            fv_exist = sum(future_value(r.get(s["name"], 0), s["roi"], tenure) for s in st.session_state.sources)
+            gap = fv_goal - fv_exist
 
-            fv_existing = sum(
-                future_value(r.get(src["name"], 0), src["roi"], tenure)
-                for src in st.session_state.sources
-            )
+            lump = gap / ((1 + r["New SIP ROI %"]/100)**tenure) if gap > 0 and tenure > 0 else 0
 
-            gap = fv_goal - fv_existing
+            rm = r["New SIP ROI %"] / 100 / 12
+            n = round(tenure * 12)
+            sip = 0
+            if gap > 0 and n > 0:
+                if rm == 0:
+                    sip = gap / n
+                else:
+                    sip = gap * rm / ((1 + rm)**n - 1)
 
-            # Lumpsum required today
-            if gap > 0 and tenure > 0:
-                lumpsum = gap / ((1 + r["New SIP ROI %"] / 100) ** tenure)
-            else:
-                lumpsum = 0
+            exist_today = sum(r.get(s["name"], 0) for s in st.session_state.sources)
 
-            # Monthly SIP (future value of annuity formula)
-            r_month = r["New SIP ROI %"] / 100 / 12
-            n_months = round(tenure * 12)
-            if gap <= 0 or n_months <= 0:
-                sip = 0
-            elif r_month == 0:
-                sip = gap / n_months
-            else:
-                sip = gap * r_month / ((1 + r_month) ** n_months - 1)
-
-            existing_today = sum(r.get(src["name"], 0) for src in st.session_state.sources)
-
-            total_existing += existing_today
-            total_lump += lumpsum
-            total_sip += sip
+            tot_exist += exist_today
+            tot_lump += lump
+            tot_sip += sip
 
             rows.append({
                 "Goal": r["Goal"],
                 "Priority": int(r["Priority"]),
-                "Existing Today": format_indian(existing_today),
-                "Lumpsum Today": format_indian(lumpsum),
+                "Existing": format_indian(exist_today),
+                "Lumpsum Today": format_indian(lump),
                 "Monthly SIP": format_indian(sip),
             })
 
-        out_df = pd.DataFrame(rows)
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
-        st.dataframe(
-            out_df,
-            use_container_width=True,
-            hide_index=True,
-            column_order=["Goal", "Priority", "Existing Today", "Lumpsum Today", "Monthly SIP"]
-        )
+        st.markdown(f"""
+        **Totals**  
+        • Existing today: ₹{format_indian(tot_exist)}  
+        • Additional Lumpsum needed: ₹{format_indian(tot_lump)}  
+        • Additional Monthly SIP: ₹{format_indian(tot_sip)}
+        """)
 
-        st.markdown("---")
-        st.markdown(f"**Grand Totals**")
-        st.markdown(f"- **Existing today**: ₹ {format_indian(total_existing)}")
-        st.markdown(f"- **Additional lumpsum needed today**: ₹ {format_indian(total_lump)}")
-        st.markdown(f"- **Additional monthly SIP needed**: ₹ {format_indian(total_sip)}")
-
-st.caption("Real-time • Dynamic sources • Correct financial math • v2025.01")
-
-
-
+st.caption("Real-time editing • Dynamic sources • v2025")
