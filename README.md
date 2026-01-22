@@ -17,11 +17,17 @@ Each row represents one financial goal.
 Example:
 
 Goal	- Fund for marriage
+
 Priority	- 1
+
 Current Cost	- 50,00,000 (like the cost if you decide to get married today)
+
 Years	- 5
+
 Months	- 0
+
 Inflation %	- 8% (if it costs 50 lacs today, surely it will not cost the same 5 years later)
+
 New SIP ROI % - 10% (to achieve the goal you will invest somewhere, what ROI that somewhere will fetch?, if you contribute to marraige fund by putting money in FD, then enter 4.55% here (7% minus 35% tax))
 
 Explanation:
