@@ -1,3 +1,6 @@
+Update - Have switched this website from streamlit to lovable, explore it here - https://goal-based-financial-planner.lovable.app/
+
+
 # Goal-Based Financial Planner
 
 A financial planning tool to plan multiple life goals using
